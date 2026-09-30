@@ -26,15 +26,18 @@ export default function QueueManagement() {
   return (
     <View style={styles.screen}>
       <Stack.Screen options={{ title: service ? service.name : 'Queue' }} />
-      <Text style={type.heading}>Queue management is not built yet</Text>
-      <Text style={styles.body}>
+      <Text style={[type.label, { color: colors.accentText }]}>Placeholder</Text>
+      <Text style={[type.title, { marginTop: spacing.sm }]}>
+        Queue management is not built yet
+      </Text>
+      <Text style={[type.body, { marginTop: spacing.sm }]}>
         {service
           ? `${service.waiting} people are waiting for ${service.name}.`
           : 'This service could not be found.'}
       </Text>
-      <Text style={styles.note}>
-        Placeholder screen. Replace app/admin/queue/[serviceId].js with the
-        real Queue Management screen.
+      <Text style={[type.secondary, { marginTop: spacing.lg }]}>
+        Replace src/app/admin/queue/[serviceId].js with the real Queue
+        Management screen.
       </Text>
     </View>
   );
@@ -43,10 +46,8 @@ export default function QueueManagement() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: colors.paper,
+    backgroundColor: colors.bg,
     padding: spacing.xl,
     justifyContent: 'center',
   },
-  body: { ...type.body, marginTop: spacing.sm },
-  note: { ...type.secondary, marginTop: spacing.lg },
 });

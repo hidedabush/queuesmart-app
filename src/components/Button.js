@@ -1,6 +1,6 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text } from 'react-native';
-import { colors, radius, spacing } from '../theme';
+import { colors, fonts, radius, spacing } from '../theme';
 
 /**
  * variant: 'primary' | 'secondary' | 'danger'
@@ -22,10 +22,11 @@ export default function Button({
       disabled={disabled}
       accessibilityRole="button"
       accessibilityLabel={label}
+      accessibilityState={{ disabled }}
       style={({ pressed }) => [
         styles.base,
         { backgroundColor: palette.bg, borderColor: palette.border },
-        pressed && !disabled && styles.pressed,
+        pressed && !disabled && { backgroundColor: palette.pressed },
         disabled && styles.disabled,
         style,
       ]}
@@ -36,21 +37,26 @@ export default function Button({
 }
 
 const PALETTES = {
-  primary: { bg: colors.indigo, fg: colors.surface, border: colors.indigo },
-  secondary: { bg: colors.surface, fg: colors.indigo, border: colors.line },
-  danger: { bg: colors.surface, fg: colors.red, border: colors.redSoft },
+  primary: { bg: colors.accent, fg: colors.text, border: colors.accent, pressed: '#B5141F' },
+  secondary: { bg: 'transparent', fg: colors.text, border: colors.lineStrong, pressed: colors.raised },
+  danger: { bg: 'transparent', fg: colors.accentText, border: colors.accent, pressed: colors.accentSoft },
 };
 
 const styles = StyleSheet.create({
   base: {
-    minHeight: 48,
+    minHeight: 52,
     borderRadius: radius.sm,
     borderWidth: 1,
     paddingHorizontal: spacing.lg,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  pressed: { opacity: 0.8 },
-  disabled: { opacity: 0.45 },
-  label: { fontSize: 15, fontWeight: '600' },
+  disabled: { opacity: 0.4 },
+  label: {
+    fontFamily: fonts.mono,
+    fontSize: 14,
+    fontWeight: '700',
+    letterSpacing: 1.5,
+    textTransform: 'uppercase',
+  },
 });

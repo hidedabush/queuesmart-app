@@ -16,15 +16,18 @@ export default function Landing() {
 
   return (
     <View style={styles.screen}>
-      <Stack.Screen options={{ title: 'QueueSmart' }} />
-      <Text style={type.display}>QueueSmart</Text>
-      <Text style={styles.subtitle}>
-        Development entry point. Pick an area to work on.
+      <Stack.Screen options={{ title: 'QueueSmart', headerShown: false }} />
+      <Text style={type.label}>Dev entry point</Text>
+      <Text style={styles.brand}>
+        Queue<Text style={{ color: colors.accentText }}>Smart</Text>
+      </Text>
+      <Text style={[type.secondary, { marginTop: spacing.sm }]}>
+        Pick an area to work on.
       </Text>
 
       <View style={styles.actions}>
         <Button
-          label="Administrator area"
+          label="Administrator area →"
           onPress={() => router.push('/admin/dashboard')}
         />
         <Button
@@ -41,13 +44,10 @@ export default function Landing() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: colors.paper,
+    backgroundColor: colors.bg,
     padding: spacing.xl,
     justifyContent: 'center',
   },
-  subtitle: {
-    ...type.secondary,
-    marginTop: spacing.sm,
-  },
+  brand: { ...type.display, fontSize: 48, marginTop: spacing.sm },
   actions: { marginTop: spacing.xxl },
 });

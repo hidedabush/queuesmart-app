@@ -1,22 +1,34 @@
 // Design tokens for QueueSmart.
 // Every screen imports from here so the app stays visually consistent
 // as different team members build different parts.
+//
+// Theme: black background, white text, red accents. Red is reserved for
+// "live" and "needs attention" signals so it keeps its meaning.
+
+import { Platform } from 'react-native';
 
 export const colors = {
-  paper: '#F5F6F8',      // screen background
-  surface: '#FFFFFF',    // cards, rows, inputs
-  ink: '#16202B',        // primary text
-  slate: '#5A6775',      // secondary text
-  line: '#E1E5EA',       // hairline separators and input borders
+  bg: '#000000',          // screen background
+  surface: '#0B0B0B',     // cards, rows, inputs
+  raised: '#161616',      // pressed / selected surfaces
+  line: '#262626',        // hairline separators
+  lineStrong: '#3D3D3D',  // input borders, inactive outlines
 
-  indigo: '#2F4B7C',     // primary action
-  indigoSoft: '#E8EDF5', // primary action, quiet background
-  green: '#2E7D52',      // open, low priority, success
-  greenSoft: '#E4F1EA',
-  amber: '#B0700F',      // medium priority, attention
-  amberSoft: '#FAEFDC',
-  red: '#B3261E',        // high priority, closed, destructive
-  redSoft: '#FAE6E4',
+  text: '#FFFFFF',        // primary text
+  muted: '#A3A3A3',       // secondary text (8:1 on black)
+  faint: '#6B6B6B',       // decorative only, never body text
+
+  accent: '#E11D2E',      // fills behind white text (buttons, switches)
+  accentText: '#FF4D5A',  // red used as text or lines on black (5.9:1)
+  accentSoft: 'rgba(225, 29, 46, 0.14)',
+};
+
+export const fonts = {
+  mono: Platform.select({
+    ios: 'Menlo',
+    android: 'monospace',
+    default: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+  }),
 };
 
 export const spacing = {
@@ -29,25 +41,34 @@ export const spacing = {
 };
 
 export const radius = {
-  sm: 6,
-  md: 10,
+  sm: 2,
+  md: 4,
   pill: 999,
 };
 
-// A deliberate type scale rather than ad-hoc font sizes.
 export const type = {
-  display: { fontSize: 34, fontWeight: '700', color: colors.ink, letterSpacing: -0.5 },
-  title: { fontSize: 22, fontWeight: '700', color: colors.ink, letterSpacing: -0.3 },
-  heading: { fontSize: 17, fontWeight: '600', color: colors.ink },
-  body: { fontSize: 15, fontWeight: '400', color: colors.ink },
-  secondary: { fontSize: 13, fontWeight: '400', color: colors.slate },
-  label: { fontSize: 13, fontWeight: '600', color: colors.ink },
+  hero: { fontFamily: fonts.mono, fontSize: 88, fontWeight: '700', color: colors.text, letterSpacing: -4 },
+  display: { fontSize: 34, fontWeight: '800', color: colors.text, letterSpacing: -1 },
+  title: { fontSize: 24, fontWeight: '800', color: colors.text, letterSpacing: -0.5 },
+  heading: { fontSize: 17, fontWeight: '700', color: colors.text },
+  body: { fontSize: 16, fontWeight: '500', color: colors.text },
+  secondary: { fontSize: 14, fontWeight: '400', color: colors.muted, lineHeight: 20 },
+  // Small uppercase monospace tag used for labels, metadata and counters.
+  label: {
+    fontFamily: fonts.mono,
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.muted,
+    letterSpacing: 1.5,
+    textTransform: 'uppercase',
+  },
+  mono: { fontFamily: fonts.mono, fontSize: 14, color: colors.text },
 };
 
-// Priority level is a core concept from A1, so it gets one shared
-// colour mapping used everywhere it appears.
-export const priorityTone = {
-  low: { label: 'Low priority', fg: colors.green, bg: colors.greenSoft },
-  medium: { label: 'Medium priority', fg: colors.amber, bg: colors.amberSoft },
-  high: { label: 'High priority', fg: colors.red, bg: colors.redSoft },
+// Priority is shown as a 1-3 bar meter plus a word, so it never relies on
+// colour alone. Only "high" uses the red accent.
+export const priorityLevels = {
+  low: { level: 1, label: 'Low', hint: 'Served after other queues when they overlap.' },
+  medium: { level: 2, label: 'Medium', hint: 'Standard ordering.' },
+  high: { level: 3, label: 'High', hint: 'Served first when queues overlap.' },
 };

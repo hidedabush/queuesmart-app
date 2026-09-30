@@ -2,19 +2,24 @@ import React from 'react';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { ServicesProvider } from '../data/ServicesStore';
-import { colors } from '../theme';
+import { colors, fonts } from '../theme';
 
 export default function RootLayout() {
   return (
     <ServicesProvider>
-      <StatusBar style="dark" />
+      <StatusBar style="light" />
       <Stack
         screenOptions={{
-          headerStyle: { backgroundColor: colors.surface },
-          headerTitleStyle: { fontSize: 17, fontWeight: '600', color: colors.ink },
-          headerTintColor: colors.indigo,
+          headerStyle: { backgroundColor: colors.bg },
+          headerTitleStyle: {
+            fontFamily: fonts.mono,
+            fontSize: 14,
+            fontWeight: '700',
+            color: colors.text,
+          },
+          headerTintColor: colors.accentText,
           headerShadowVisible: false,
-          contentStyle: { backgroundColor: colors.paper },
+          contentStyle: { backgroundColor: colors.bg },
         }}
       />
     </ServicesProvider>

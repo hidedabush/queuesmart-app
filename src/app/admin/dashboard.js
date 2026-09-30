@@ -1,6 +1,9 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import {
+  AccessibilityInfo,
+  Animated,
   FlatList,
+  Platform,
   Pressable,
   StyleSheet,
   Switch,
@@ -9,21 +12,18 @@ import {
 } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import { useServices, formatWait } from '../../data/ServicesStore';
-import { PriorityPill } from '../../components/Pill';
+import { PriorityMeter } from '../../components/Pill';
 import Button from '../../components/Button';
-import { colors, radius, spacing, type } from '../../theme';
+import { colors, fonts, radius, spacing, type } from '../../theme';
 
 /**
  * Admin Dashboard (A2 requirement 3.1)
  *
- * What an administrator needs on opening the app, in order:
+ * Styled like a departure board. What an administrator needs on opening
+ * the app, in order:
  *   1. How many people are waiting right now, across everything.
  *   2. Which queue is the problem.
  *   3. One tap to close a queue that is out of control.
- *
- * The layout follows that order. The total waiting count is the one loud
- * element on the screen; everything else stays quiet so it reads at a glance
- * from across a service counter.
  */
 export default function AdminDashboard() {
   const router = useRouter();
@@ -36,7 +36,7 @@ export default function AdminDashboard() {
       (worst, s) => (!worst || s.waiting > worst.waiting ? s : worst),
       null
     );
-    return { waiting, openCount: open.length, total: services.length, longest };
+    return { open, waiting, openCount: open.length, total: services.length, longest };
   }, [services]);
 
   return (
@@ -50,24 +50,26 @@ export default function AdminDashboard() {
         ListHeaderComponent={
           <Header summary={summary} onManage={() => router.push('/admin/services')} />
         }
-        ItemSeparatorComponent={() => <View style={styles.separator} />}
-        renderItem={({ item }) => (
+        renderItem={({ item, index }) => (
           <ServiceRow
             service={item}
+            index={index}
+            isBusiest={summary.longest?.id === item.id && item.waiting > 0}
             onOpenQueue={() => router.push(`/admin/queue/${item.id}`)}
             onToggle={(value) => setQueueOpen(item.id, value)}
           />
         )}
         ListEmptyComponent={
           <View style={styles.empty}>
-            <Text style={type.heading}>No services yet</Text>
-            <Text style={styles.emptyBody}>
+            <Text style={type.label}>Board empty</Text>
+            <Text style={[type.title, { marginTop: spacing.sm }]}>No services yet</Text>
+            <Text style={[type.secondary, { marginTop: spacing.xs }]}>
               Create a service and it will appear here with its live queue.
             </Text>
             <Button
-              label="Create a service"
+              label="+ Create a service"
               onPress={() => router.push('/admin/services/new')}
-              style={{ marginTop: spacing.lg }}
+              style={{ marginTop: spacing.lg, alignSelf: 'stretch' }}
             />
           </View>
         }
@@ -76,50 +78,140 @@ export default function AdminDashboard() {
   );
 }
 
+function LiveDot() {
+  const opacity = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    let loop;
+    let cancelled = false;
+    AccessibilityInfo.isReduceMotionEnabled().then((reduce) => {
+      if (reduce || cancelled) return;
+      loop = Animated.loop(
+        Animated.sequence([
+          Animated.timing(opacity, { toValue: 0.25, duration: 700, useNativeDriver: Platform.OS !== 'web' }),
+          Animated.timing(opacity, { toValue: 1, duration: 700, useNativeDriver: Platform.OS !== 'web' }),
+        ])
+      );
+      loop.start();
+    });
+    return () => {
+      cancelled = true;
+      loop?.stop();
+    };
+  }, [opacity]);
+
+  return <Animated.View style={[styles.liveDot, { opacity }]} />;
+}
+
 function Header({ summary, onManage }) {
+  const { waiting, openCount, total, longest, open } = summary;
+
   return (
     <View>
-      <View style={styles.summary}>
-        <Text style={styles.summaryLabel}>Waiting right now</Text>
-        <Text style={styles.summaryNumber}>{summary.waiting}</Text>
-        <Text style={styles.summaryDetail}>
-          across {summary.openCount} open{' '}
-          {summary.openCount === 1 ? 'queue' : 'queues'}
-          {summary.longest
-            ? ` · longest is ${summary.longest.name}`
-            : ''}
+      <View style={styles.statusRow}>
+        <LiveDot />
+        <Text style={[type.label, { color: colors.text }]}>Live</Text>
+        <Text style={type.label}>
+          {'  ·  '}
+          {openCount}/{total} queues open
         </Text>
       </View>
 
+      <View
+        style={styles.hero}
+        accessible
+        accessibilityLabel={`${waiting} people waiting right now across ${openCount} open queues`}
+      >
+        <Text style={type.hero}>{String(waiting).padStart(2, '0')}</Text>
+        <Text style={styles.heroCaption}>
+          People{'\n'}waiting{'\n'}
+          <Text style={{ color: colors.accentText }}>now</Text>
+        </Text>
+      </View>
+
+      <LoadBar open={open} busiestId={longest?.waiting > 0 ? longest.id : null} />
+
+      {longest && longest.waiting > 0 ? (
+        <View style={styles.alert}>
+          <Text style={[type.label, { color: colors.accentText }]}>Busiest</Text>
+          <Text style={styles.alertText} numberOfLines={1}>
+            {longest.name}
+          </Text>
+          <Text style={styles.alertCount}>{longest.waiting}</Text>
+        </View>
+      ) : null}
+
       <View style={styles.sectionHeader}>
-        <Text style={type.heading}>Services</Text>
-        <Pressable onPress={onManage} accessibilityRole="button">
-          <Text style={styles.link}>Manage</Text>
+        <Text style={type.label}>Services / {String(total).padStart(2, '0')}</Text>
+        <Pressable
+          onPress={onManage}
+          accessibilityRole="button"
+          accessibilityLabel="Manage services"
+          hitSlop={12}
+        >
+          <Text style={styles.link}>Manage →</Text>
         </Pressable>
+      </View>
+
+      <View style={styles.tableHead}>
+        <Text style={[type.label, styles.colIndex]}>#</Text>
+        <Text style={[type.label, { flex: 1 }]}>Service</Text>
+        <Text style={type.label}>Waiting</Text>
       </View>
     </View>
   );
 }
 
-function ServiceRow({ service, onOpenQueue, onToggle }) {
+// Each open queue's share of everyone waiting, as one segmented bar.
+function LoadBar({ open, busiestId }) {
+  const withPeople = open.filter((s) => s.waiting > 0);
+  if (withPeople.length === 0) {
+    return <View style={[styles.loadBar, { backgroundColor: colors.line }]} />;
+  }
+
+  const shades = [colors.text, '#8A8A8A', '#555555', '#3A3A3A'];
+  let shadeIndex = 0;
+
+  return (
+    <View style={styles.loadBar} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+      {withPeople.map((s) => {
+        const color = s.id === busiestId ? colors.accent : shades[shadeIndex++ % shades.length];
+        return <View key={s.id} style={{ flex: s.waiting, backgroundColor: color, marginRight: 2 }} />;
+      })}
+    </View>
+  );
+}
+
+function ServiceRow({ service, index, isBusiest, onOpenQueue, onToggle }) {
+  const { isOpen } = service;
+
   return (
     <Pressable
       onPress={onOpenQueue}
       accessibilityRole="button"
-      accessibilityLabel={`Open queue for ${service.name}`}
-      style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
+      accessibilityLabel={`${service.name}, ${isOpen ? `${service.waiting} waiting` : 'closed'}. Open queue.`}
+      style={({ pressed }) => [
+        styles.row,
+        isBusiest && styles.rowBusiest,
+        pressed && { backgroundColor: colors.raised },
+      ]}
     >
+      <Text style={[styles.rowIndex, isBusiest && { color: colors.accentText }]}>
+        {String(index + 1).padStart(2, '0')}
+      </Text>
+
       <View style={styles.rowMain}>
-        <Text style={type.body} numberOfLines={1}>
+        <Text
+          style={[styles.rowName, !isOpen && styles.closedText]}
+          numberOfLines={1}
+        >
           {service.name}
         </Text>
         <Text style={styles.rowMeta}>
-          {service.isOpen
-            ? `${service.waiting} waiting · about ${formatWait(service)}`
-            : 'Queue closed'}
+          {isOpen ? `~${formatWait(service)}` : 'Queue closed'}
         </Text>
-        <View style={styles.rowPills}>
-          <PriorityPill priority={service.priority} />
+        <View style={{ marginTop: spacing.sm, opacity: isOpen ? 1 : 0.5 }}>
+          <PriorityMeter priority={service.priority} />
         </View>
       </View>
 
@@ -127,16 +219,19 @@ function ServiceRow({ service, onOpenQueue, onToggle }) {
         <Text
           style={[
             styles.count,
-            !service.isOpen && { color: colors.line },
+            isBusiest && { color: colors.accentText },
+            !isOpen && { color: colors.faint },
           ]}
         >
-          {service.isOpen ? service.waiting : '—'}
+          {isOpen ? String(service.waiting).padStart(2, '0') : '--'}
         </Text>
         <Switch
-          value={service.isOpen}
+          value={isOpen}
           onValueChange={onToggle}
-          trackColor={{ true: colors.green, false: colors.line }}
-          accessibilityLabel={`${service.isOpen ? 'Close' : 'Open'} the ${service.name} queue`}
+          trackColor={{ true: colors.accent, false: colors.lineStrong }}
+          thumbColor={colors.text}
+          ios_backgroundColor={colors.lineStrong}
+          accessibilityLabel={`${isOpen ? 'Close' : 'Open'} the ${service.name} queue`}
         />
       </View>
     </Pressable>
@@ -144,62 +239,116 @@ function ServiceRow({ service, onOpenQueue, onToggle }) {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.paper },
-  content: { padding: spacing.lg, paddingBottom: spacing.xxl },
+  screen: { flex: 1, backgroundColor: colors.bg },
+  content: { padding: spacing.lg, paddingBottom: spacing.xxl * 2 },
 
-  summary: {
-    backgroundColor: colors.indigo,
-    borderRadius: radius.md,
-    padding: spacing.xl,
+  statusRow: { flexDirection: 'row', alignItems: 'center', marginTop: spacing.sm },
+  liveDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: colors.accent,
+    marginRight: spacing.sm,
   },
-  summaryLabel: {
+
+  hero: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    marginTop: spacing.md,
+  },
+  heroCaption: {
+    fontFamily: fonts.mono,
     fontSize: 13,
-    fontWeight: '600',
-    color: colors.indigoSoft,
-  },
-  summaryNumber: {
-    fontSize: 56,
     fontWeight: '700',
-    color: colors.surface,
-    letterSpacing: -2,
-    marginVertical: spacing.xs,
+    lineHeight: 17,
+    letterSpacing: 1.5,
+    textTransform: 'uppercase',
+    color: colors.muted,
+    marginLeft: spacing.md,
+    marginBottom: spacing.md,
   },
-  summaryDetail: { fontSize: 13, color: colors.indigoSoft },
+
+  loadBar: {
+    flexDirection: 'row',
+    height: 10,
+    marginTop: spacing.md,
+    overflow: 'hidden',
+  },
+
+  alert: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: spacing.lg,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.accent,
+    borderLeftWidth: 4,
+    backgroundColor: colors.accentSoft,
+    borderRadius: radius.sm,
+  },
+  alertText: { ...type.body, flex: 1, marginLeft: spacing.md, fontWeight: '700' },
+  alertCount: { fontFamily: fonts.mono, fontSize: 18, fontWeight: '700', color: colors.accentText },
 
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: spacing.xl,
-    marginBottom: spacing.md,
+    marginTop: spacing.xxl,
+    paddingBottom: spacing.md,
+    borderBottomWidth: 2,
+    borderBottomColor: colors.text,
   },
-  link: { fontSize: 15, fontWeight: '600', color: colors.indigo },
+  link: {
+    fontFamily: fonts.mono,
+    fontSize: 13,
+    fontWeight: '700',
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+    color: colors.accentText,
+  },
+  tableHead: {
+    flexDirection: 'row',
+    paddingVertical: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.line,
+  },
+  colIndex: { width: 40 },
 
   row: {
     flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.surface,
-    paddingHorizontal: spacing.lg,
+    alignItems: 'flex-start',
     paddingVertical: spacing.lg,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.line,
   },
-  rowPressed: { backgroundColor: colors.indigoSoft },
-  rowMain: { flex: 1, paddingRight: spacing.md },
-  rowMeta: { ...type.secondary, marginTop: 2 },
-  rowPills: { flexDirection: 'row', marginTop: spacing.sm },
-  rowRight: { alignItems: 'center' },
-  count: {
-    fontSize: 28,
+  rowBusiest: { borderLeftWidth: 3, borderLeftColor: colors.accent, paddingLeft: spacing.sm },
+  rowIndex: {
+    width: 40,
+    fontFamily: fonts.mono,
+    fontSize: 14,
     fontWeight: '700',
-    color: colors.ink,
+    color: colors.faint,
+    paddingTop: 2,
+  },
+  rowMain: { flex: 1, paddingRight: spacing.md },
+  rowName: { ...type.body, fontWeight: '700' },
+  closedText: { color: colors.faint, textDecorationLine: 'line-through' },
+  rowMeta: { ...type.label, marginTop: spacing.xs, textTransform: 'none', letterSpacing: 0.5 },
+  rowRight: { alignItems: 'flex-end' },
+  count: {
+    fontFamily: fonts.mono,
+    fontSize: 30,
+    fontWeight: '700',
+    color: colors.text,
     marginBottom: spacing.sm,
   },
-  separator: { height: 1, backgroundColor: colors.line },
 
   empty: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.lineStrong,
+    borderStyle: 'dashed',
     padding: spacing.xl,
-    alignItems: 'flex-start',
+    marginTop: spacing.lg,
   },
-  emptyBody: { ...type.secondary, marginTop: spacing.xs },
 });
