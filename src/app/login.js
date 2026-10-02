@@ -36,8 +36,15 @@ export default function LoginScreen() {
   };
 
   const handleLogin = () => {
-    if (!validate()) return;
-    router.replace('/user/join-queue');
+    if (!validate()) {
+      if (!email.trim() || !validateEmail(email)) {
+        emailRef.current?.focus();
+      } else {
+        passwordRef.current?.focus();
+      }
+      return;
+    }
+    router.replace('/user/dashboard');
   };
 
   const handleEmailSubmit = () => {

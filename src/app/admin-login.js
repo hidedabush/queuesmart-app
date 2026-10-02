@@ -36,7 +36,14 @@ export default function AdminLoginScreen() {
   };
 
   const handleLogin = () => {
-    if (!validate()) return;
+    if (!validate()) {
+      if (!email.trim() || !validateEmail(email)) {
+        emailRef.current?.focus();
+      } else {
+        passwordRef.current?.focus();
+      }
+      return;
+    }
     router.replace('/admin/dashboard');
   };
 

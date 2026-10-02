@@ -57,7 +57,7 @@ export default function RegisterScreen() {
 
   const handleRegister = () => {
     if (!validate()) return;
-    router.replace('/user/join-queue');
+    router.replace('/user/dashboard');
   };
 
   const handleEmailSubmit = () => {
