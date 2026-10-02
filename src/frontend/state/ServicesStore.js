@@ -1,6 +1,6 @@
-import React, { createContext, useContext, useMemo, useState } from 'react';
-import * as servicesApi from '../../api/services';
+import { createContext, useContext, useMemo, useState } from 'react';
 import * as queueApi from '../../api/queue';
+import * as servicesApi from '../../api/services';
 
 /**
  * Shared front-end state for Assignment 2.
@@ -18,6 +18,7 @@ const ServicesContext = createContext(null);
 export function ServicesProvider({ children }) {
   const [services, setServices] = useState(() => servicesApi.listServices());
   const [activeQueue, setActiveQueue] = useState(() => queueApi.getActiveQueue());
+  const [userEmail, setUserEmail] = useState('');
 
   const value = useMemo(() => {
     function refresh() {
@@ -50,6 +51,10 @@ export function ServicesProvider({ children }) {
       refresh();
     }
 
+    function updateUserEmail(email) {
+      setUserEmail(email);
+    }
+
     function joinQueue(serviceId) {
       const entry = queueApi.joinQueue(serviceId);
       refresh();
@@ -71,8 +76,10 @@ export function ServicesProvider({ children }) {
       activeQueue,
       joinQueue,
       leaveQueue,
+      userEmail,
+      setUserEmail: updateUserEmail,
     };
-  }, [services, activeQueue]);
+  }, [services, activeQueue, userEmail]);
 
   return (
     <ServicesContext.Provider value={value}>{children}</ServicesContext.Provider>

@@ -3,6 +3,7 @@ import { useMemo, useRef, useState } from 'react';
 import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Button from '../frontend/components/Button';
 import Field from '../frontend/components/Field';
+import { useServices } from '../frontend/state/ServicesStore';
 import { colors, spacing, type } from '../frontend/theme';
 
 const passwordRules = [
@@ -15,6 +16,7 @@ const passwordRules = [
 
 export default function RegisterScreen() {
   const router = useRouter();
+  const { setUserEmail } = useServices();
   const emailRef = useRef(null);
   const passwordRef = useRef(null);
   const confirmPasswordRef = useRef(null);
@@ -57,6 +59,7 @@ export default function RegisterScreen() {
 
   const handleRegister = () => {
     if (!validate()) return;
+    setUserEmail(email.trim());
     router.replace('/user/dashboard');
   };
 

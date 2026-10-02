@@ -3,10 +3,12 @@ import { useRef, useState } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Button from '../frontend/components/Button';
 import Field from '../frontend/components/Field';
+import { useServices } from '../frontend/state/ServicesStore';
 import { colors, spacing, type } from '../frontend/theme';
 
 export default function LoginScreen() {
   const router = useRouter();
+  const { setUserEmail } = useServices();
   const emailRef = useRef(null);
   const passwordRef = useRef(null);
   const [email, setEmail] = useState('');
@@ -44,6 +46,7 @@ export default function LoginScreen() {
       }
       return;
     }
+    setUserEmail(email.trim());
     router.replace('/user/dashboard');
   };
 
