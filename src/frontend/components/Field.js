@@ -106,7 +106,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   index: { color: colors.faint, fontFamily: fonts.mono },
-  required: { color: colors.muted },
+  required: { color: colors.accentText },
   counter: { ...type.label, letterSpacing: 0.5, fontVariant: ['tabular-nums'] },
   inputBox: {
     flexDirection: 'row',
