@@ -11,11 +11,11 @@ import {
   View,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useServices } from '../../../data/ServicesStore';
-import QueueRow, { TOGGLE_WIDTH } from '../../../components/QueueRow';
-import Button from '../../../components/Button';
-import { contentWidth, useLayout } from '../../../hooks/useLayout';
-import { colors, fonts, layout, radius, spacing, type } from '../../../theme';
+import { useServices } from '../../../frontend/state/ServicesStore';
+import QueueRow, { TOGGLE_WIDTH } from '../../../frontend/components/QueueRow';
+import Button from '../../../frontend/components/Button';
+import { contentWidth, useLayout } from '../../../frontend/hooks/useLayout';
+import { colors, fonts, layout, radius, spacing, type } from '../../../frontend/theme';
 
 /**
  * Admin Dashboard (A2 requirement 3.1)

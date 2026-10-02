@@ -1,8 +1,8 @@
 import React from 'react';
 import { Tabs } from 'expo-router';
-import { useLayout } from '../../../hooks/useLayout';
-import { DashboardIcon, ServicesIcon } from '../../../components/TabIcons';
-import { colors, fonts, headerOptions, layout } from '../../../theme';
+import { useLayout } from '../../../frontend/hooks/useLayout';
+import { DashboardIcon, ServicesIcon } from '../../../frontend/components/TabIcons';
+import { colors, fonts, headerOptions, layout } from '../../../frontend/theme';
 
 /**
  * The two top-level admin destinations. Bottom tab bar on phones, where it

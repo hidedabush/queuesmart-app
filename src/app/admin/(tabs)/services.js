@@ -1,11 +1,11 @@
 import React from 'react';
 import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useServices } from '../../../data/ServicesStore';
-import { PriorityMeter, OpenPill } from '../../../components/Pill';
-import Button from '../../../components/Button';
-import { contentWidth, useLayout } from '../../../hooks/useLayout';
-import { colors, layout, radius, spacing, type } from '../../../theme';
+import { useServices } from '../../../frontend/state/ServicesStore';
+import { PriorityMeter, OpenPill } from '../../../frontend/components/Pill';
+import Button from '../../../frontend/components/Button';
+import { contentWidth, useLayout } from '../../../frontend/hooks/useLayout';
+import { colors, layout, radius, spacing, type } from '../../../frontend/theme';
 
 const FAB_CLEARANCE = 96;
 

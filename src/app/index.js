@@ -1,15 +1,15 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
-import Button from '../components/Button';
-import { colors, spacing, type } from '../theme';
+import Button from '../frontend/components/Button';
+import { colors, spacing, type } from '../frontend/theme';
 
 /**
  * TEMPORARY entry screen.
  *
- * This exists only so the app is runnable while the team builds in parallel.
- * Once the Login screen is merged it becomes the entry point and this file
- * should be deleted. Teammates: do not build on top of this screen.
+ * This exists only so both areas are reachable while the team builds in
+ * parallel. Once the Login screen is merged it becomes the entry point and
+ * this file should be deleted. Teammates: do not build on top of this screen.
  */
 export default function Landing() {
   const router = useRouter();
@@ -31,9 +31,9 @@ export default function Landing() {
           onPress={() => router.push('/admin/dashboard')}
         />
         <Button
-          label="User area (not built yet)"
+          label="User area →"
           variant="secondary"
-          disabled
+          onPress={() => router.push('/user/join-queue')}
           style={{ marginTop: spacing.md }}
         />
       </View>

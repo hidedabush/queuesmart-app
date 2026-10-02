@@ -1,8 +1,8 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { Stack, useLocalSearchParams } from 'expo-router';
-import { useServices } from '../../../data/ServicesStore';
-import { colors, spacing, type } from '../../../theme';
+import { useServices } from '../../../frontend/state/ServicesStore';
+import { colors, spacing, type } from '../../../frontend/theme';
 
 /**
  * PLACEHOLDER — Queue Management screen.
@@ -16,7 +16,8 @@ import { colors, spacing, type } from '../../../theme';
  *   - "Serve next" simulation
  *
  * The service is already available from useServices(); read queue entries the
- * same way once mock entries are added to src/data/ServicesStore.js.
+ * same way once mock entries are added (rows in src/database/, rules in
+ * src/backend/queueService.js, exposed through src/api/queue.js).
  */
 export default function QueueManagement() {
   const { serviceId } = useLocalSearchParams();

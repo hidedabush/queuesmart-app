@@ -1,6 +1,6 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { estimateWait } from '../data/ServicesStore';
+import { estimateWait } from '../../api/services';
 import { PriorityMeter } from './Pill';
 import Toggle from './Toggle';
 import { colors, fonts, spacing, type } from '../theme';

@@ -12,14 +12,14 @@ import {
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useHeaderHeight } from 'expo-router/react-navigation';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useServices } from '../../../data/ServicesStore';
-import Field from '../../../components/Field';
-import Button from '../../../components/Button';
-import QueueRow from '../../../components/QueueRow';
-import { PriorityMeter } from '../../../components/Pill';
-import { useToast } from '../../../components/Toast';
-import { contentWidth, useLayout } from '../../../hooks/useLayout';
-import { colors, fonts, layout, priorityLevels, radius, spacing, touch, type } from '../../../theme';
+import { useServices } from '../../../frontend/state/ServicesStore';
+import Field from '../../../frontend/components/Field';
+import Button from '../../../frontend/components/Button';
+import QueueRow from '../../../frontend/components/QueueRow';
+import { PriorityMeter } from '../../../frontend/components/Pill';
+import { useToast } from '../../../frontend/components/Toast';
+import { contentWidth, useLayout } from '../../../frontend/hooks/useLayout';
+import { colors, fonts, layout, priorityLevels, radius, spacing, touch, type } from '../../../frontend/theme';
 
 const MAX_NAME = 100;
 const MAX_DURATION = 480; // eight hours; anything longer is a data-entry mistake

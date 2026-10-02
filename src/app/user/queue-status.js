@@ -2,28 +2,23 @@ import { Stack, useRouter } from 'expo-router';
 import { StyleSheet, Text, View } from 'react-native';
 
 import {
-    getActiveQueue,
-    leaveQueue,
-} from '../../data/QueueStore';
-
-import {
+    useQueue,
     useServices,
-} from '../../data/ServicesStore';
+} from '../../frontend/state/ServicesStore';
 
-import Button from '../../components/Button';
+import Button from '../../frontend/components/Button';
 
 import {
     colors,
     radius,
     spacing,
     type,
-} from '../../theme';
+} from '../../frontend/theme';
 
 export default function QueueStatus() {
   const router = useRouter();
   const { services } = useServices();
-
-  const activeQueue = getActiveQueue();
+  const { activeQueue, leaveQueue } = useQueue();
 
   const service = activeQueue
     ? services.find(
@@ -31,9 +26,16 @@ export default function QueueStatus() {
       )
     : null;
 
+  // Back to the service list. It is normally the previous screen; replace
+  // covers the case where this screen was opened directly.
+  function goToJoin() {
+    if (router.canGoBack()) router.back();
+    else router.replace('/user/join-queue');
+  }
+
   function handleLeave() {
     leaveQueue();
-    router.replace('/user/join-queue');
+    goToJoin();
   }
 
   function getStatusLabel(status) {
@@ -72,9 +74,17 @@ export default function QueueStatus() {
         </Text>
 
         {!activeQueue || !service ? (
-          <Text style={styles.empty}>
-            You are not currently in a queue.
-          </Text>
+          <>
+            <Text style={styles.empty}>
+              You are not currently in a queue.
+            </Text>
+
+            <Button
+              label="Join a queue"
+              onPress={goToJoin}
+              style={{ marginTop: spacing.xl }}
+            />
+          </>
         ) : (
           <View style={styles.card}>
             <Text style={type.heading}>
@@ -121,7 +131,7 @@ export default function QueueStatus() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: colors.paper,
+    backgroundColor: colors.bg,
   },
 
   content: {
@@ -143,12 +153,12 @@ const styles = StyleSheet.create({
   status: {
     fontSize: 13,
     fontWeight: '600',
-    color: colors.green,
+    color: colors.text,
     marginTop: spacing.sm,
   },
 
   positionBox: {
-    backgroundColor: colors.indigoSoft,
+    backgroundColor: colors.raised,
     borderRadius: radius.md,
     padding: spacing.xl,
     alignItems: 'center',
@@ -158,7 +168,7 @@ const styles = StyleSheet.create({
   positionNumber: {
     fontSize: 42,
     fontWeight: '700',
-    color: colors.indigo,
+    color: colors.text,
   },
 
   positionLabel: {

@@ -1,32 +1,33 @@
 import { Stack, useRouter } from 'expo-router';
 import { FlatList, StyleSheet, Text, View } from 'react-native';
 
-import {
-    formatWait,
-    useServices,
-} from '../../data/ServicesStore';
+import { formatWait } from '../../api/services';
 
-import { joinQueue } from '../../data/QueueStore';
+import {
+    useQueue,
+    useServices,
+} from '../../frontend/state/ServicesStore';
 
 import {
     OpenPill,
     PriorityPill,
-} from '../../components/Pill';
+} from '../../frontend/components/Pill';
 
-import Button from '../../components/Button';
+import Button from '../../frontend/components/Button';
 
 import {
     colors,
     spacing,
     type,
-} from '../../theme';
+} from '../../frontend/theme';
 
 export default function JoinQueue() {
   const router = useRouter();
   const { services } = useServices();
+  const { activeQueue, joinQueue } = useQueue();
 
   function handleJoin(service) {
-    joinQueue(service);
+    joinQueue(service.id);
     router.push('/user/queue-status');
   }
 
@@ -47,6 +48,15 @@ export default function JoinQueue() {
             <Text style={styles.subtitle}>
               Choose a service to join.
             </Text>
+
+            {activeQueue ? (
+              <Button
+                label="View my queue status"
+                variant="secondary"
+                onPress={() => router.push('/user/queue-status')}
+                style={{ marginTop: spacing.lg }}
+              />
+            ) : null}
           </View>
         }
         ItemSeparatorComponent={() => (
@@ -75,8 +85,14 @@ export default function JoinQueue() {
               </View>
 
               <Button
-                label={item.isOpen ? 'Join Queue' : 'Queue Closed'}
-                disabled={!item.isOpen}
+                label={
+                  activeQueue?.serviceId === item.id
+                    ? 'You are in this queue'
+                    : item.isOpen
+                      ? 'Join Queue'
+                      : 'Queue Closed'
+                }
+                disabled={!item.isOpen || activeQueue?.serviceId === item.id}
                 onPress={() => handleJoin(item)}
                 style={{ marginTop: spacing.lg }}
               />
@@ -96,7 +112,7 @@ export default function JoinQueue() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: colors.paper,
+    backgroundColor: colors.bg,
   },
 
   content: {

@@ -2,9 +2,9 @@ import React from 'react';
 import { DarkTheme, Stack, ThemeProvider } from 'expo-router';
 import { getFocusedRouteNameFromRoute } from 'expo-router/react-navigation';
 import { StatusBar } from 'expo-status-bar';
-import { ServicesProvider } from '../data/ServicesStore';
-import { ToastProvider } from '../components/Toast';
-import { colors, headerOptions } from '../theme';
+import { ServicesProvider } from '../frontend/state/ServicesStore';
+import { ToastProvider } from '../frontend/components/Toast';
+import { colors, headerOptions } from '../frontend/theme';
 
 // Navigation chrome (headers, tab bar, borders) picks these up by default.
 const navigationTheme = {
@@ -50,6 +50,8 @@ export default function RootLayout() {
               })}
             />
             <Stack.Screen name="admin/queue/[serviceId]" options={{ title: 'Queue' }} />
+            <Stack.Screen name="user/join-queue" options={{ title: 'Join Queue' }} />
+            <Stack.Screen name="user/queue-status" options={{ title: 'Queue Status' }} />
           </Stack>
         </ToastProvider>
       </ServicesProvider>
