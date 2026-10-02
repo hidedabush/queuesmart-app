@@ -34,6 +34,7 @@ export default function RootLayout() {
             }}
           >
             <Stack.Screen name="index" options={{ headerShown: false }} />
+            <Stack.Screen name="admin-login" options={{ title: 'Admin Login', headerShown: false }} />
             {/* The tab navigator draws its own headers. The title follows the
                 active tab so back buttons say where they lead. */}
             <Stack.Screen
