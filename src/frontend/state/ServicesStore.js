@@ -1,6 +1,6 @@
-import React, { createContext, useContext, useMemo, useState } from 'react';
-import * as servicesApi from '../../api/services';
+import { createContext, useContext, useMemo, useState } from 'react';
 import * as queueApi from '../../api/queue';
+import * as servicesApi from '../../api/services';
 
 /**
  * Shared front-end state for Assignment 2.
@@ -15,18 +15,65 @@ import * as queueApi from '../../api/queue';
  */
 const ServicesContext = createContext(null);
 
+// temporary mock-data for front-end prototype, i used our names heh
+// eventually, replace this with real database-backed queue entries once the backend is connected
+const teamRoster = ['Kevin', 'Jennifer', 'Nguyen', 'Bella'];
+
+function makeQueue(service) {
+  const count = Math.max(0, Number(service?.waiting ?? 0));
+  return Array.from({ length: count }, (_, index) => {
+    const name = teamRoster[index % teamRoster.length];
+    const repeat = Math.floor(index / teamRoster.length) + 1;
+
+    return {
+      id: `${service.id}-q-${index + 1}`,
+      name: teamRoster.length > 1 && repeat > 1 ? `${name} ${repeat}` : name,
+    };
+  });
+}
+
+function hydrateQueueState(list, previousMap = new Map()) {
+  return list.map((service) => {
+    const previous = previousMap.get(service.id) ?? [];
+    return {
+      ...service,
+      queue: previous.length > 0 ? previous : makeQueue(service),
+      waiting: previous.length > 0 ? previous.length : service.waiting,
+    };
+  });
+}
+
 export function ServicesProvider({ children }) {
-  const [services, setServices] = useState(() => servicesApi.listServices());
+  const [services, setServices] = useState(() => hydrateQueueState(servicesApi.listServices()));
   const [activeQueue, setActiveQueue] = useState(() => queueApi.getActiveQueue());
 
   const value = useMemo(() => {
     function refresh() {
-      setServices(servicesApi.listServices());
+      const previousMap = new Map((services || []).map((service) => [service.id, service.queue ?? []]));
+      setServices(hydrateQueueState(servicesApi.listServices(), previousMap));
       setActiveQueue(queueApi.getActiveQueue());
     }
 
     function getService(id) {
       return services.find((s) => s.id === id) || null;
+    }
+
+    function getServiceQueue(id) {
+      return getService(id)?.queue ?? [];
+    }
+
+    function updateServiceQueue(id, nextQueue) {
+      setServices((current) =>
+        current.map((service) => {
+          if (service.id !== id) return service;
+          const queue = Array.isArray(nextQueue) ? nextQueue : [];
+          return {
+            ...service,
+            queue,
+            waiting: queue.length,
+          };
+        })
+      );
     }
 
     function createService(draft) {
@@ -64,6 +111,8 @@ export function ServicesProvider({ children }) {
     return {
       services,
       getService,
+      getServiceQueue,
+      updateServiceQueue,
       createService,
       updateService,
       deleteService,
