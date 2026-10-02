@@ -5,16 +5,17 @@ import {
   FlatList,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
-  Switch,
   Text,
   View,
 } from 'react-native';
-import { Stack, useRouter } from 'expo-router';
-import { useServices, formatWait } from '../../data/ServicesStore';
-import { PriorityMeter } from '../../components/Pill';
-import Button from '../../components/Button';
-import { colors, fonts, radius, spacing, type } from '../../theme';
+import { useRouter } from 'expo-router';
+import { useServices } from '../../../data/ServicesStore';
+import QueueRow, { TOGGLE_WIDTH } from '../../../components/QueueRow';
+import Button from '../../../components/Button';
+import { contentWidth, useLayout } from '../../../hooks/useLayout';
+import { colors, fonts, layout, radius, spacing, type } from '../../../theme';
 
 /**
  * Admin Dashboard (A2 requirement 3.1)
@@ -22,12 +23,15 @@ import { colors, fonts, radius, spacing, type } from '../../theme';
  * Styled like a departure board. What an administrator needs on opening
  * the app, in order:
  *   1. How many people are waiting right now, across everything.
- *   2. Which queue is the problem.
- *   3. One tap to close a queue that is out of control.
+ *   2. Which queue is the problem — one tap to open it.
+ *   3. One tap to open or close any queue.
  */
 export default function AdminDashboard() {
   const router = useRouter();
   const { services, setQueueOpen } = useServices();
+  const { width, isXL, isTablet, gutter } = useLayout();
+  // Summary beside the list only when both get a comfortable width.
+  const split = isXL;
 
   const summary = useMemo(() => {
     const open = services.filter((s) => s.isOpen);
@@ -36,52 +40,81 @@ export default function AdminDashboard() {
       (worst, s) => (!worst || s.waiting > worst.waiting ? s : worst),
       null
     );
-    return { open, waiting, openCount: open.length, total: services.length, longest };
+    return {
+      open,
+      waiting,
+      openCount: open.length,
+      total: services.length,
+      busiest: longest && longest.waiting > 0 ? longest : null,
+    };
   }, [services]);
 
-  return (
-    <View style={styles.screen}>
-      <Stack.Screen options={{ title: 'Dashboard' }} />
+  const openQueue = (id) => router.push(`/admin/queue/${id}`);
 
-      <FlatList
-        data={services}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.content}
-        ListHeaderComponent={
-          <Header summary={summary} onManage={() => router.push('/admin/services')} />
-        }
-        renderItem={({ item, index }) => (
-          <ServiceRow
-            service={item}
-            index={index}
-            isBusiest={summary.longest?.id === item.id && item.waiting > 0}
-            onOpenQueue={() => router.push(`/admin/queue/${item.id}`)}
-            onToggle={(value) => setQueueOpen(item.id, value)}
-          />
-        )}
-        ListEmptyComponent={
-          <View style={styles.empty}>
-            <Text style={type.label}>Board empty</Text>
-            <Text style={[type.title, { marginTop: spacing.sm }]}>No services yet</Text>
-            <Text style={[type.secondary, { marginTop: spacing.xs }]}>
-              Create a service and it will appear here with its live queue.
-            </Text>
-            <Button
-              label="+ Create a service"
-              onPress={() => router.push('/admin/services/new')}
-              style={{ marginTop: spacing.lg, alignSelf: 'stretch' }}
-            />
-          </View>
-        }
-      />
+  if (services.length === 0) {
+    return (
+      <ScrollView
+        style={styles.screen}
+        contentContainerStyle={[contentWidth(layout.readable, gutter), styles.padded]}
+      >
+        <EmptyBoard onCreate={() => router.push('/admin/services/new')} />
+      </ScrollView>
+    );
+  }
+
+  // Scales the headline number with the space it has: ~72 on a 320pt phone,
+  // capped so it never dominates a tablet.
+  const heroSize = split ? 96 : isTablet ? 104 : Math.round(Math.min(96, Math.max(72, width * 0.22)));
+
+  const summaryPanel = (
+    <Summary summary={summary} heroSize={heroSize} onOpenBusiest={openQueue} />
+  );
+
+  const list = (
+    <FlatList
+      data={services}
+      keyExtractor={(item) => item.id}
+      style={styles.screen}
+      contentContainerStyle={
+        split ? styles.padded : [contentWidth(layout.readable, gutter), styles.padded]
+      }
+      ListHeaderComponent={
+        <>
+          {split ? null : summaryPanel}
+          <ListHeader total={summary.total} />
+        </>
+      }
+      renderItem={({ item }) => (
+        <QueueRow
+          service={item}
+          isBusiest={summary.busiest?.id === item.id}
+          onOpen={() => openQueue(item.id)}
+          onToggle={(value) => setQueueOpen(item.id, value)}
+        />
+      )}
+    />
+  );
+
+  if (!split) return list;
+
+  return (
+    <View style={[styles.screen, styles.wide, contentWidth(layout.max, gutter)]}>
+      <ScrollView style={styles.sidePanel} contentContainerStyle={styles.padded}>
+        {summaryPanel}
+      </ScrollView>
+      <View style={styles.wideList}>{list}</View>
     </View>
   );
 }
 
-function LiveDot() {
+function LiveDot({ active }) {
   const opacity = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
+    if (!active) {
+      opacity.setValue(1);
+      return undefined;
+    }
     let loop;
     let cancelled = false;
     AccessibilityInfo.isReduceMotionEnabled().then((reduce) => {
@@ -98,66 +131,82 @@ function LiveDot() {
       cancelled = true;
       loop?.stop();
     };
-  }, [opacity]);
-
-  return <Animated.View style={[styles.liveDot, { opacity }]} />;
-}
-
-function Header({ summary, onManage }) {
-  const { waiting, openCount, total, longest, open } = summary;
+  }, [active, opacity]);
 
   return (
-    <View>
-      <View style={styles.statusRow}>
-        <LiveDot />
-        <Text style={[type.label, { color: colors.text }]}>Live</Text>
-        <Text style={type.label}>
-          {'  ·  '}
-          {openCount}/{total} queues open
+    <Animated.View
+      style={[styles.liveDot, { opacity, backgroundColor: active ? colors.accent : colors.faint }]}
+    />
+  );
+}
+
+function Summary({ summary, heroSize, onOpenBusiest }) {
+  const { waiting, openCount, total, open, busiest } = summary;
+  const live = openCount > 0;
+
+  return (
+    <View style={styles.summary}>
+      <View
+        style={styles.statusRow}
+        accessible
+        accessibilityLabel={live ? `Live. ${openCount} of ${total} queues open` : 'All queues closed'}
+      >
+        <LiveDot active={live} />
+        <Text style={[type.label, live && { color: colors.text }]}>
+          {live ? 'Live' : 'All queues closed'}
         </Text>
+        {live ? (
+          <Text style={type.label}>
+            {'  ·  '}
+            {openCount} of {total} open
+          </Text>
+        ) : null}
       </View>
 
       <View
         style={styles.hero}
         accessible
-        accessibilityLabel={`${waiting} people waiting right now across ${openCount} open queues`}
+        role="heading"
+        aria-level={2}
+        accessibilityLabel={`${waiting} people waiting right now across ${openCount} open ${
+          openCount === 1 ? 'queue' : 'queues'
+        }`}
       >
-        <Text style={type.hero}>{String(waiting).padStart(2, '0')}</Text>
-        <Text style={styles.heroCaption}>
+        <Text
+          style={[type.hero, styles.heroNumber, { fontSize: heroSize, lineHeight: heroSize * 1.05, letterSpacing: -heroSize * 0.045 }]}
+          maxFontSizeMultiplier={1.15}
+        >
+          {String(waiting).padStart(2, '0')}
+        </Text>
+        <Text style={styles.heroCaption} maxFontSizeMultiplier={1.4}>
           People{'\n'}waiting{'\n'}
           <Text style={{ color: colors.accentText }}>now</Text>
         </Text>
       </View>
 
-      <LoadBar open={open} busiestId={longest?.waiting > 0 ? longest.id : null} />
+      <LoadBar open={open} busiestId={busiest?.id} />
 
-      {longest && longest.waiting > 0 ? (
-        <View style={styles.alert}>
-          <Text style={[type.label, { color: colors.accentText }]}>Busiest</Text>
-          <Text style={styles.alertText} numberOfLines={1}>
-            {longest.name}
-          </Text>
-          <Text style={styles.alertCount}>{longest.waiting}</Text>
-        </View>
-      ) : null}
-
-      <View style={styles.sectionHeader}>
-        <Text style={type.label}>Services / {String(total).padStart(2, '0')}</Text>
+      {busiest ? (
         <Pressable
-          onPress={onManage}
+          onPress={() => onOpenBusiest(busiest.id)}
           accessibilityRole="button"
-          accessibilityLabel="Manage services"
-          hitSlop={12}
+          accessibilityLabel={`Busiest queue: ${busiest.name}, ${busiest.waiting} waiting`}
+          accessibilityHint="Opens queue management"
+          style={({ pressed, hovered }) => [
+            styles.alert,
+            (hovered || pressed) && { backgroundColor: colors.accentSoftStrong },
+          ]}
         >
-          <Text style={styles.link}>Manage →</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={[type.label, { color: colors.accentText }]}>Busiest</Text>
+            <Text style={styles.alertName} numberOfLines={2}>
+              {busiest.name}
+            </Text>
+          </View>
+          <Text style={styles.alertCount}>{busiest.waiting}</Text>
+          <Text style={styles.alertChevron}>›</Text>
         </Pressable>
-      </View>
-
-      <View style={styles.tableHead}>
-        <Text style={[type.label, styles.colIndex]}>#</Text>
-        <Text style={[type.label, { flex: 1 }]}>Service</Text>
-        <Text style={type.label}>Waiting</Text>
-      </View>
+      ) : null}
     </View>
   );
 }
@@ -176,86 +225,51 @@ function LoadBar({ open, busiestId }) {
     <View style={styles.loadBar} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
       {withPeople.map((s) => {
         const color = s.id === busiestId ? colors.accent : shades[shadeIndex++ % shades.length];
-        return <View key={s.id} style={{ flex: s.waiting, backgroundColor: color, marginRight: 2 }} />;
+        return <View key={s.id} style={{ flex: s.waiting, backgroundColor: color }} />;
       })}
     </View>
   );
 }
 
-function ServiceRow({ service, index, isBusiest, onOpenQueue, onToggle }) {
-  const { isOpen } = service;
-
+function ListHeader({ total }) {
   return (
-    <Pressable
-      onPress={onOpenQueue}
-      accessibilityRole="button"
-      accessibilityLabel={`${service.name}, ${isOpen ? `${service.waiting} waiting` : 'closed'}. Open queue.`}
-      style={({ pressed }) => [
-        styles.row,
-        isBusiest && styles.rowBusiest,
-        pressed && { backgroundColor: colors.raised },
-      ]}
-    >
-      <Text style={[styles.rowIndex, isBusiest && { color: colors.accentText }]}>
-        {String(index + 1).padStart(2, '0')}
+    <View style={styles.listHeader}>
+      <Text style={[type.label, styles.listTitle]} role="heading" aria-level={2}>
+        Queues · {String(total).padStart(2, '0')}
       </Text>
+      <Text style={[type.label, styles.colWaiting]} aria-hidden>Waiting</Text>
+      <Text style={[type.label, styles.colOpen]} aria-hidden>Open</Text>
+    </View>
+  );
+}
 
-      <View style={styles.rowMain}>
-        <Text
-          style={[styles.rowName, !isOpen && styles.closedText]}
-          numberOfLines={1}
-        >
-          {service.name}
-        </Text>
-        <Text style={styles.rowMeta}>
-          {isOpen ? `~${formatWait(service)}` : 'Queue closed'}
-        </Text>
-        <View style={{ marginTop: spacing.sm, opacity: isOpen ? 1 : 0.5 }}>
-          <PriorityMeter priority={service.priority} />
-        </View>
-      </View>
-
-      <View style={styles.rowRight}>
-        <Text
-          style={[
-            styles.count,
-            isBusiest && { color: colors.accentText },
-            !isOpen && { color: colors.faint },
-          ]}
-        >
-          {isOpen ? String(service.waiting).padStart(2, '0') : '--'}
-        </Text>
-        <Switch
-          value={isOpen}
-          onValueChange={onToggle}
-          trackColor={{ true: colors.accent, false: colors.lineStrong }}
-          thumbColor={colors.text}
-          ios_backgroundColor={colors.lineStrong}
-          accessibilityLabel={`${isOpen ? 'Close' : 'Open'} the ${service.name} queue`}
-        />
-      </View>
-    </Pressable>
+function EmptyBoard({ onCreate }) {
+  return (
+    <View style={styles.empty}>
+      <Text style={type.label}>Board empty</Text>
+      <Text style={[type.title, { marginTop: spacing.sm }]}>No services yet</Text>
+      <Text style={[type.secondary, { marginTop: spacing.xs }]}>
+        Create a service and it will appear here with its live queue.
+      </Text>
+      <Button label="+ Create a service" onPress={onCreate} style={{ marginTop: spacing.lg }} />
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bg },
-  content: { padding: spacing.lg, paddingBottom: spacing.xxl * 2 },
+  padded: { paddingTop: spacing.lg, paddingBottom: spacing.xxxl },
 
-  statusRow: { flexDirection: 'row', alignItems: 'center', marginTop: spacing.sm },
-  liveDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: colors.accent,
-    marginRight: spacing.sm,
-  },
+  wide: { flexDirection: 'row', columnGap: spacing.xxl },
+  sidePanel: { width: 340, flexGrow: 0 },
+  wideList: { flex: 1 },
 
-  hero: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    marginTop: spacing.md,
-  },
+  summary: { marginBottom: spacing.xl },
+  statusRow: { flexDirection: 'row', alignItems: 'center' },
+  liveDot: { width: 8, height: 8, borderRadius: 4, marginRight: spacing.sm },
+
+  hero: { flexDirection: 'row', alignItems: 'flex-end', marginTop: spacing.sm },
+  heroNumber: { fontVariant: ['tabular-nums'] },
   heroCaption: {
     fontFamily: fonts.mono,
     fontSize: 13,
@@ -268,87 +282,42 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
 
-  loadBar: {
-    flexDirection: 'row',
-    height: 10,
-    marginTop: spacing.md,
-    overflow: 'hidden',
-  },
+  loadBar: { flexDirection: 'row', columnGap: 2, height: 8, marginTop: spacing.md, overflow: 'hidden' },
 
   alert: {
     flexDirection: 'row',
     alignItems: 'center',
+    minHeight: 64,
     marginTop: spacing.lg,
     paddingVertical: spacing.md,
-    paddingHorizontal: spacing.md,
+    paddingLeft: spacing.md,
+    paddingRight: spacing.sm,
     borderWidth: 1,
     borderColor: colors.accent,
     borderLeftWidth: 4,
     backgroundColor: colors.accentSoft,
     borderRadius: radius.sm,
   },
-  alertText: { ...type.body, flex: 1, marginLeft: spacing.md, fontWeight: '700' },
-  alertCount: { fontFamily: fonts.mono, fontSize: 18, fontWeight: '700', color: colors.accentText },
+  alertName: { ...type.body, fontWeight: '700', marginTop: 2 },
+  alertCount: { ...type.metric, fontSize: 24, color: colors.accentText, marginLeft: spacing.md },
+  alertChevron: { fontSize: 22, color: colors.accentText, marginLeft: spacing.sm, marginTop: -2 },
 
-  sectionHeader: {
+  listHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: spacing.xxl,
-    paddingBottom: spacing.md,
+    alignItems: 'flex-end',
+    paddingBottom: spacing.sm,
     borderBottomWidth: 2,
     borderBottomColor: colors.text,
   },
-  link: {
-    fontFamily: fonts.mono,
-    fontSize: 13,
-    fontWeight: '700',
-    letterSpacing: 1,
-    textTransform: 'uppercase',
-    color: colors.accentText,
-  },
-  tableHead: {
-    flexDirection: 'row',
-    paddingVertical: spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.line,
-  },
-  colIndex: { width: 40 },
-
-  row: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    paddingVertical: spacing.lg,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.line,
-  },
-  rowBusiest: { borderLeftWidth: 3, borderLeftColor: colors.accent, paddingLeft: spacing.sm },
-  rowIndex: {
-    width: 40,
-    fontFamily: fonts.mono,
-    fontSize: 14,
-    fontWeight: '700',
-    color: colors.faint,
-    paddingTop: 2,
-  },
-  rowMain: { flex: 1, paddingRight: spacing.md },
-  rowName: { ...type.body, fontWeight: '700' },
-  closedText: { color: colors.faint, textDecorationLine: 'line-through' },
-  rowMeta: { ...type.label, marginTop: spacing.xs, textTransform: 'none', letterSpacing: 0.5 },
-  rowRight: { alignItems: 'flex-end' },
-  count: {
-    fontFamily: fonts.mono,
-    fontSize: 30,
-    fontWeight: '700',
-    color: colors.text,
-    marginBottom: spacing.sm,
-  },
+  listTitle: { flex: 1 },
+  // Right edge lines up with the count column (the row's chevron sits after it).
+  colWaiting: { marginRight: spacing.lg + 1 },
+  colOpen: { width: TOGGLE_WIDTH + 1, textAlign: 'center' },
 
   empty: {
     borderWidth: 1,
     borderColor: colors.lineStrong,
     borderStyle: 'dashed',
     padding: spacing.xl,
-    marginTop: spacing.lg,
   },
 });

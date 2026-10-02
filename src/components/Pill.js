@@ -48,9 +48,9 @@ export function PriorityPill({ priority }) {
 
 export function OpenPill({ isOpen }) {
   return isOpen ? (
-    <Pill label="● Open" fg={colors.text} border={colors.text} />
+    <Pill label="● Open" fg={colors.text} border={colors.control} />
   ) : (
-    <Pill label="Closed" fg={colors.faint} border={colors.line} />
+    <Pill label="Closed" fg={colors.muted} border={colors.lineStrong} />
   );
 }
 
