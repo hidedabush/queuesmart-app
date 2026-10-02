@@ -2,17 +2,17 @@ import { Stack, useRouter } from 'expo-router';
 import { StyleSheet, Text, View } from 'react-native';
 
 import {
-    useQueue,
-    useServices,
+  useQueue,
+  useServices,
 } from '../../frontend/state/ServicesStore';
 
 import Button from '../../frontend/components/Button';
 
 import {
-    colors,
-    radius,
-    spacing,
-    type,
+  colors,
+  radius,
+  spacing,
+  type,
 } from '../../frontend/theme';
 
 export default function QueueStatus() {
@@ -123,6 +123,13 @@ export default function QueueStatus() {
             />
           </View>
         )}
+
+        <Button
+          label="Back to dashboard"
+          variant="secondary"
+          onPress={() => router.replace('/user/dashboard')}
+          style={{ marginTop: spacing.xl }}
+        />
       </View>
     </View>
   );
