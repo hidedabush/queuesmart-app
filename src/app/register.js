@@ -1,6 +1,6 @@
 import { Stack, useRouter } from 'expo-router';
-import { useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useMemo, useRef, useState } from 'react';
+import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Button from '../frontend/components/Button';
 import Field from '../frontend/components/Field';
 import { colors, spacing, type } from '../frontend/theme';
@@ -15,6 +15,9 @@ const passwordRules = [
 
 export default function RegisterScreen() {
   const router = useRouter();
+  const emailRef = useRef(null);
+  const passwordRef = useRef(null);
+  const confirmPasswordRef = useRef(null);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -57,88 +60,128 @@ export default function RegisterScreen() {
     router.replace('/user/join-queue');
   };
 
+  const handleEmailSubmit = () => {
+    if (password.trim()) {
+      handleRegister();
+      return;
+    }
+    passwordRef.current?.focus();
+  };
+
+  const confirmPasswordStatus = confirmPassword
+    ? confirmPassword === password
+      ? 'Passwords match.'
+      : 'Passwords do not match.'
+    : undefined;
+
+  const confirmPasswordError =
+    confirmPassword && confirmPassword !== password
+      ? 'Passwords do not match.'
+      : errors.confirmPassword;
+
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
-      <Stack.Screen options={{ title: 'Register', headerShown: false }} />
+    <KeyboardAvoidingView
+      style={styles.screen}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 24}
+    >
+      <ScrollView
+        style={styles.screen}
+        contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        <Stack.Screen options={{ title: 'Register', headerShown: false }} />
 
-      <View style={styles.header}>
-        <Text style={[type.label, styles.eyebrow]}>Create account</Text>
-        <Text style={styles.title}>Register</Text>
-        <Text style={type.secondary}>Your email will be used as your username for queue access.</Text>
-      </View>
+        <View style={styles.header}>
+          <Text style={[type.label, styles.eyebrow]}>Create account</Text>
+          <Text style={styles.title}>Register</Text>
+          <Text style={type.secondary}>Your email will be used as your username for queue access.</Text>
+        </View>
 
-      <View style={styles.card}>
-        <Field
-          label="Email"
-          value={email}
-          onChangeText={(value) => {
-            setEmail(value);
-            if (errors.email) {
-              setErrors((current) => ({ ...current, email: undefined }));
-            }
-          }}
-          error={errors.email}
-          placeholder="name@school.edu"
-          keyboardType="email-address"
-          autoCapitalize="none"
-          autoCorrect={false}
-          textContentType="emailAddress"
-          maxLength={254}
-          helper="Use your school or office email address."
-          required
-        />
+        <View style={styles.card}>
+          <Field
+            label="Email"
+            value={email}
+            onChangeText={(value) => {
+              setEmail(value);
+              if (errors.email) {
+                setErrors((current) => ({ ...current, email: undefined }));
+              }
+            }}
+            onSubmitEditing={handleEmailSubmit}
+            error={errors.email}
+            placeholder="name@school.edu"
+            keyboardType="email-address"
+            autoCapitalize="none"
+            autoCorrect={false}
+            textContentType="emailAddress"
+            maxLength={254}
+            helper="Use your school or office email address."
+            returnKeyType="next"
+            inputRef={emailRef}
+            required
+          />
 
-        <Field
-          label="Password"
-          value={password}
-          onChangeText={(value) => {
-            setPassword(value);
-            if (errors.password) {
-              setErrors((current) => ({ ...current, password: undefined }));
-            }
-          }}
-          error={errors.password}
-          placeholder="Create a password"
-          secureTextEntry
-          textContentType="newPassword"
-          maxLength={128}
-          helper="Use a strong password to protect your queue account."
-          required
-        >
-          <View style={styles.requirementsBox}>
-            <Text style={[type.label, styles.requirementsTitle]}>Password requirements</Text>
-            {passwordChecks.map((rule) => (
-              <View key={rule.label} style={styles.ruleRow}>
-                <Text style={[styles.ruleDot, rule.met && styles.ruleDotMet]}>{rule.met ? '✓' : '•'}</Text>
-                <Text style={[type.secondary, rule.met && styles.ruleMet]}>{rule.label}</Text>
-              </View>
-            ))}
-          </View>
-        </Field>
+          <Field
+            label="Password"
+            value={password}
+            onChangeText={(value) => {
+              setPassword(value);
+              if (errors.password) {
+                setErrors((current) => ({ ...current, password: undefined }));
+              }
+            }}
+            onSubmitEditing={() => confirmPasswordRef.current?.focus()}
+            error={errors.password}
+            placeholder="Create a password"
+            secureTextEntry
+            textContentType="newPassword"
+            maxLength={128}
+            helper="Use a strong password to protect your queue account."
+            returnKeyType="next"
+            inputRef={passwordRef}
+            required
+          >
+            <View style={styles.requirementsBox}>
+              <Text style={[type.label, styles.requirementsTitle]}>Password requirements</Text>
+              {passwordChecks.map((rule) => (
+                <View key={rule.label} style={styles.ruleRow}>
+                  <Text style={[styles.ruleDot, rule.met && styles.ruleDotMet]}>{rule.met ? '✓' : '•'}</Text>
+                  <Text style={[type.secondary, rule.met && styles.ruleMet]}>{rule.label}</Text>
+                </View>
+              ))}
+            </View>
+          </Field>
 
-        <Field
-          label="Confirm password"
-          value={confirmPassword}
-          onChangeText={(value) => {
-            setConfirmPassword(value);
-            if (errors.confirmPassword) {
-              setErrors((current) => ({ ...current, confirmPassword: undefined }));
-            }
-          }}
-          error={errors.confirmPassword}
-          placeholder="Re-enter your password"
-          secureTextEntry
-          textContentType="newPassword"
-          maxLength={128}
-          helper="Retype the same password to confirm."
-          required
-        />
-      </View>
+          <Field
+            label="Confirm password"
+            value={confirmPassword}
+            onChangeText={(value) => {
+              setConfirmPassword(value);
+              if (errors.confirmPassword) {
+                setErrors((current) => ({ ...current, confirmPassword: undefined }));
+              }
+            }}
+            onSubmitEditing={handleRegister}
+            error={confirmPasswordError}
+            placeholder="Re-enter your password"
+            secureTextEntry
+            textContentType="newPassword"
+            maxLength={128}
+            helper={confirmPasswordStatus || 'Retype the same password to confirm.'}
+            returnKeyType="done"
+            blurOnSubmit={false}
+            inputRef={confirmPasswordRef}
+            required
+          />
+        </View>
 
-      <View style={styles.buttonWrap}>
-        <Button label="Create account" onPress={handleRegister} />
-      </View>
-    </ScrollView>
+        <View style={styles.buttonWrap}>
+          <Button label="Create account" onPress={handleRegister} />
+        </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 

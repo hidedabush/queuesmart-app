@@ -1,12 +1,14 @@
 import { Stack, useRouter } from 'expo-router';
-import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useRef, useState } from 'react';
+import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Button from '../frontend/components/Button';
 import Field from '../frontend/components/Field';
 import { colors, spacing, type } from '../frontend/theme';
 
 export default function LoginScreen() {
   const router = useRouter();
+  const emailRef = useRef(null);
+  const passwordRef = useRef(null);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -38,88 +40,114 @@ export default function LoginScreen() {
     router.replace('/user/join-queue');
   };
 
+  const handleEmailSubmit = () => {
+    if (password.trim()) {
+      handleLogin();
+      return;
+    }
+    passwordRef.current?.focus();
+  };
+
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
-      <Stack.Screen options={{ title: 'Login', headerShown: false }} />
-
-      <View style={styles.header}>
-        <Text style={type.label}>QueueSmart</Text>
-        <Text style={styles.title}>Welcome back</Text>
-        <Text style={type.secondary}>Sign in to check your place in line and stay updated.</Text>
-      </View>
-
-      <View style={styles.card}>
-        <Field
-          label="Email"
-          value={email}
-          onChangeText={(value) => {
-            setEmail(value);
-            if (errors.email) {
-              setErrors((current) => ({ ...current, email: undefined }));
-            }
-          }}
-          error={errors.email}
-          placeholder="name@school.edu"
-          keyboardType="email-address"
-          autoCapitalize="none"
-          autoCorrect={false}
-          textContentType="emailAddress"
-          maxLength={254}
-          helper="Use the email address linked to your queue account."
-          required
-        />
-
-        <Field
-          label="Password"
-          value={password}
-          onChangeText={(value) => {
-            setPassword(value);
-            if (errors.password) {
-              setErrors((current) => ({ ...current, password: undefined }));
-            }
-          }}
-          error={errors.password}
-          placeholder="Enter your password"
-          secureTextEntry={!showPassword}
-          textContentType="password"
-          maxLength={128}
-          required
-          children={
-            <Pressable
-              style={styles.showToggle}
-              onPress={() => setShowPassword((current) => !current)}
-              accessibilityRole="button"
-              accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
-            >
-              <Text style={styles.showToggleText}>{showPassword ? 'Hide' : 'Show'}</Text>
-            </Pressable>
-          }
-        />
-      </View>
-
-      <Button label="Login" onPress={handleLogin} />
-
-      <View style={styles.metaRow}>
-        <Text style={type.secondary}>Don’t have an account?</Text>
-        <Pressable onPress={() => router.push('/register')} accessibilityRole="link">
-          <Text style={styles.link}>Register here</Text>
-        </Pressable>
-      </View>
-
-      <Pressable
-        style={styles.adminCard}
-        onPress={() => router.push('/admin-login')}
-        accessibilityRole="button"
-        accessibilityLabel="Open administrator login"
+    <KeyboardAvoidingView
+      style={styles.screen}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 24}
+    >
+      <ScrollView
+        style={styles.screen}
+        contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
       >
-        <View style={styles.adminIconWrap} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
-          <View style={styles.lockShackle} />
-          <View style={styles.lockBody} />
+        <Stack.Screen options={{ title: 'Login', headerShown: false }} />
+
+        <View style={styles.header}>
+          <Text style={type.label}>QueueSmart</Text>
+          <Text style={styles.title}>Welcome back</Text>
+          <Text style={type.secondary}>Sign in to check your place in line and stay updated.</Text>
         </View>
-        <Text style={styles.adminText}>Administrator login</Text>
-        <Text style={styles.adminArrow}>→</Text>
-      </Pressable>
-    </ScrollView>
+
+        <View style={styles.card}>
+          <Field
+            label="Email"
+            value={email}
+            onChangeText={(value) => {
+              setEmail(value);
+              if (errors.email) {
+                setErrors((current) => ({ ...current, email: undefined }));
+              }
+            }}
+            onSubmitEditing={handleEmailSubmit}
+            error={errors.email}
+            placeholder="name@school.edu"
+            keyboardType="email-address"
+            autoCapitalize="none"
+            autoCorrect={false}
+            textContentType="emailAddress"
+            maxLength={254}
+            helper="Use the email address linked to your queue account."
+            returnKeyType="next"
+            inputRef={emailRef}
+            required
+          />
+
+          <Field
+            label="Password"
+            value={password}
+            onChangeText={(value) => {
+              setPassword(value);
+              if (errors.password) {
+                setErrors((current) => ({ ...current, password: undefined }));
+              }
+            }}
+            onSubmitEditing={handleLogin}
+            error={errors.password}
+            placeholder="Enter your password"
+            secureTextEntry={!showPassword}
+            textContentType="password"
+            maxLength={128}
+            returnKeyType="done"
+            blurOnSubmit={false}
+            inputRef={passwordRef}
+            required
+            children={
+              <Pressable
+                style={styles.showToggle}
+                onPress={() => setShowPassword((current) => !current)}
+                accessibilityRole="button"
+                accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
+              >
+                <Text style={styles.showToggleText}>{showPassword ? 'Hide' : 'Show'}</Text>
+              </Pressable>
+            }
+          />
+        </View>
+
+        <Button label="Login" onPress={handleLogin} />
+
+        <View style={styles.metaRow}>
+          <Text style={type.secondary}>Don’t have an account?</Text>
+          <Pressable onPress={() => router.push('/register')} accessibilityRole="link">
+            <Text style={styles.link}>Register here</Text>
+          </Pressable>
+        </View>
+
+        <Pressable
+          style={styles.adminCard}
+          onPress={() => router.push('/admin-login')}
+          accessibilityRole="button"
+          accessibilityLabel="Open administrator login"
+        >
+          <View style={styles.adminIconWrap} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+            <View style={styles.lockShackle} />
+            <View style={styles.lockBody} />
+          </View>
+          <Text style={styles.adminText}>Administrator login</Text>
+          <Text style={styles.adminArrow}>→</Text>
+        </Pressable>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
