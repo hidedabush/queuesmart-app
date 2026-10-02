@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { StyleSheet, Text, TextInput, View } from 'react-native';
 import { colors, fonts, radius, spacing, type } from '../theme';
 
@@ -116,7 +116,7 @@ const styles = StyleSheet.create({
     borderColor: colors.control,
     borderRadius: radius.sm,
   },
-  inputFocused: { borderColor: colors.text },
+  inputFocused: { borderColor: colors.accentText },
   inputError: { borderColor: colors.accentText, borderLeftWidth: 4 },
   // Offsets the thicker error edge so the text does not jump sideways.
   inputErrorText: { paddingLeft: spacing.md - 3 },
