@@ -1,9 +1,9 @@
-import React from 'react';
 import { DarkTheme, Stack, ThemeProvider } from 'expo-router';
 import { getFocusedRouteNameFromRoute } from 'expo-router/react-navigation';
 import { StatusBar } from 'expo-status-bar';
-import { ServicesProvider } from '../frontend/state/ServicesStore';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { ToastProvider } from '../frontend/components/Toast';
+import { ServicesProvider } from '../frontend/state/ServicesStore';
 import { colors, headerOptions } from '../frontend/theme';
 
 // Navigation chrome (headers, tab bar, borders) picks these up by default.
@@ -22,17 +22,18 @@ const navigationTheme = {
 
 export default function RootLayout() {
   return (
-    <ThemeProvider value={navigationTheme}>
-      <ServicesProvider>
-        <ToastProvider>
-          <StatusBar style="light" />
-          <Stack
-            screenOptions={{
-              ...headerOptions,
-              headerBackButtonDisplayMode: 'minimal',
-              contentStyle: { backgroundColor: colors.bg },
-            }}
-          >
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <ThemeProvider value={navigationTheme}>
+        <ServicesProvider>
+          <ToastProvider>
+            <StatusBar style="light" />
+            <Stack
+              screenOptions={{
+                ...headerOptions,
+                headerBackButtonDisplayMode: 'minimal',
+                contentStyle: { backgroundColor: colors.bg },
+              }}
+            >
             <Stack.Screen name="index" options={{ headerShown: false }} />
             <Stack.Screen name="admin-login" options={{ title: 'Admin Login', headerShown: false }} />
             {/* The tab navigator draws its own headers. The title follows the
@@ -53,9 +54,10 @@ export default function RootLayout() {
             <Stack.Screen name="admin/queue/[serviceId]" options={{ title: 'Queue' }} />
             <Stack.Screen name="user/join-queue" options={{ title: 'Join Queue' }} />
             <Stack.Screen name="user/queue-status" options={{ title: 'Queue Status' }} />
-          </Stack>
-        </ToastProvider>
-      </ServicesProvider>
-    </ThemeProvider>
+            </Stack>
+          </ToastProvider>
+        </ServicesProvider>
+      </ThemeProvider>
+    </GestureHandlerRootView>
   );
 }
