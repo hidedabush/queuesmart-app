@@ -1,6 +1,7 @@
 import { Stack, useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Button from '../../frontend/components/Button';
 import Field from '../../frontend/components/Field';
 import { useServices } from '../../frontend/state/ServicesStore';
@@ -16,6 +17,7 @@ const passwordRules = [
 
 export default function UserProfile() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { userEmail, setUserEmail } = useServices();
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -62,9 +64,9 @@ export default function UserProfile() {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 24}
     >
-      <Stack.Screen options={{ title: 'Profile' }} />
+      <Stack.Screen options={{ title: 'Profile', headerShown: false }} />
       <ScrollView
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[styles.content, { paddingTop: insets.top + spacing.md }]}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
