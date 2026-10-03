@@ -1,5 +1,6 @@
 import { Stack, useRouter } from 'expo-router';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Button from '../../frontend/components/Button';
 import { colors, radius, spacing, type } from '../../frontend/theme';
 
@@ -11,11 +12,15 @@ const historyEntries = [
 
 export default function QueueHistory() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
 
   return (
     <View style={styles.screen}>
-      <Stack.Screen options={{ title: 'Queue History' }} />
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <Stack.Screen options={{ title: 'Queue History', headerShown: false }} />
+      <ScrollView
+        contentContainerStyle={[styles.content, { paddingTop: insets.top + spacing.md }]}
+        showsVerticalScrollIndicator={false}
+      >
         <Text style={type.title}>Queue history</Text>
         <Text style={styles.subtitle}>Past services you have joined.</Text>
 
