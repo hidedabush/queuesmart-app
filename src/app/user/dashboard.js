@@ -204,6 +204,12 @@ export default function UserDashboard() {
     setDismissedNotifications((current) => [...current, id]);
   };
 
+  const dismissAllNotifications = () => {
+    setDismissedNotifications((current) => [
+      ...new Set([...current, ...notifications.map((item) => item.id)]),
+    ]);
+  };
+
   return (
     <GestureHandlerRootView style={styles.screen}>
       <Stack.Screen options={{ title: 'Dashboard', headerShown: false }} />
@@ -387,18 +393,33 @@ export default function UserDashboard() {
               <View style={styles.sheetHandle} />
             </View>
             <View style={styles.sheetHeading}>
-              <View>
+              <View style={styles.sheetHeadingText}>
                 <Text style={styles.sheetTitle}>Recent updates</Text>
                 <Text style={styles.sheetSubtitle}>Queue and service activity</Text>
               </View>
-              <Pressable
-                style={styles.closeButton}
-                onPress={() => setNotificationsVisible(false)}
-                accessibilityRole="button"
-                accessibilityLabel="Close notifications"
-              >
-                <Text style={styles.closeButtonText}>×</Text>
-              </Pressable>
+              <View style={styles.sheetActions}>
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.clearAllButton,
+                    pressed && notifications.length > 0 && styles.pressed,
+                    notifications.length === 0 && styles.clearAllButtonDisabled,
+                  ]}
+                  onPress={dismissAllNotifications}
+                  disabled={notifications.length === 0}
+                  accessibilityRole="button"
+                  accessibilityLabel="Clear all notifications"
+                >
+                  <Text style={styles.clearAllText}>Clear all</Text>
+                </Pressable>
+                <Pressable
+                  style={styles.closeButton}
+                  onPress={() => setNotificationsVisible(false)}
+                  accessibilityRole="button"
+                  accessibilityLabel="Close notifications"
+                >
+                  <Text style={styles.closeButtonText}>×</Text>
+                </Pressable>
+              </View>
             </View>
             {notifications.length ? notifications.map((item) => (
               <NotificationItem key={item.id} item={item} onDismiss={dismissNotification} />
@@ -837,6 +858,14 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderColor: colors.line,
   },
+  sheetHeadingText: {
+    flex: 1,
+  },
+  sheetActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
   sheetTitle: {
     ...type.title,
     fontSize: 21,
@@ -860,6 +889,19 @@ const styles = StyleSheet.create({
     fontSize: 18,
     lineHeight: 20,
     fontWeight: '600',
+  },
+  clearAllButton: {
+    minHeight: 36,
+    justifyContent: 'center',
+    paddingHorizontal: spacing.sm,
+  },
+  clearAllButtonDisabled: {
+    opacity: 0.4,
+  },
+  clearAllText: {
+    color: colors.accentText,
+    fontSize: 12,
+    fontWeight: '700',
   },
   notificationRow: {
     flexDirection: 'row',
