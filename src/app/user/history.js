@@ -81,7 +81,7 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     gap: spacing.md,
   },
-  serviceName: { ...type.heading, flex: 1 },
+  serviceName: { ...type.heading, flex: 1, color: colors.accentText },
   outcome: {
     ...type.label,
     fontSize: 10,
