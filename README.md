@@ -34,13 +34,13 @@ rules are in section 9.
 
 Open the Extensions panel (`Ctrl/Cmd + Shift + X`) and install:
 
-| Extension | Why |
-|---|---|
-| **Expo Tools** (Expo) | Autocomplete for `app.json`, route awareness, Expo commands |
-| **ES7+ React/Redux/React-Native snippets** | `rnfe` + Tab scaffolds a screen component |
-| **Prettier – Code formatter** | Keeps formatting identical across the team, so diffs show real changes only |
-| **ESLint** | Catches unused imports and broken hooks before you run the app |
-| **GitLens** | Shows who wrote each line — useful when the TA asks about contributions |
+| Extension                                  | Why                                                                         |
+| ------------------------------------------ | --------------------------------------------------------------------------- |
+| **Expo Tools** (Expo)                      | Autocomplete for `app.json`, route awareness, Expo commands                 |
+| **ES7+ React/Redux/React-Native snippets** | `rnfe` + Tab scaffolds a screen component                                   |
+| **Prettier – Code formatter**              | Keeps formatting identical across the team, so diffs show real changes only |
+| **ESLint**                                 | Catches unused imports and broken hooks before you run the app              |
+| **GitLens**                                | Shows who wrote each line — useful when the TA asks about contributions     |
 
 Then open VS Code settings (`Ctrl/Cmd + ,`), search "format on save", and turn
 it on. Everyone on the team should do this, or Prettier will reformat each
@@ -62,7 +62,7 @@ navigation this codebase relies on). It uses `src/app/` as the routes folder
 (not a bare `app/` folder), which is an Expo template option — the structure
 in section 4 reflects that.
 
-> **Known trap:** the command above was run from *inside* a folder that was
+> **Known trap:** the command above was run from _inside_ a folder that was
 > itself already called `queuesmart-app`, so on disk the real project lives
 > two levels deep, at `queuesmart-app/queuesmart-app/`. That inner folder is
 > the one with `package.json` — see step 3.
@@ -93,10 +93,19 @@ it means you're one folder too shallow (or too deep) — `cd` until `dir` /
 `ls` shows a `package.json` in the current folder, then run `npx expo start`
 from there.
 
-### Start the backend first (A3)
+### Start the app and the backend (A3)
 
-The app gets all its data from the QueueSmart server in `server/`. Run it in
-a **second terminal** and leave it running:
+The app gets all its data from the QueueSmart server in `server/`. The
+easiest way to start both is the batch file in the project root:
+
+.\start-all.bat
+
+It opens two windows: **QueueSmart API** (the server on
+http://localhost:4000) and **QueueSmart Expo** (the app). It installs the
+server packages the first time it runs. Close those two windows to stop
+everything.
+
+If you prefer two terminals, start the server yourself and leave it running:
 
 ```bash
 cd server
@@ -104,12 +113,14 @@ npm ci          # first time, and after server/package.json changes
 npm run dev     # API on http://localhost:4000, restarts when you save
 ```
 
+Then run `npx expo start` in a second terminal from the project root.
+
 Demo accounts (in-memory, reset every time the server restarts):
 
-| Role | Email | Password |
-|---|---|---|
-| Patient | `patient@queuesmart.test` | `Patient#2026` |
-| Front desk (admin) | `admin@queuesmart.test` | `Admin#2026` |
+| Role               | Email                     | Password       |
+| ------------------ | ------------------------- | -------------- |
+| Patient            | `patient@queuesmart.test` | `Patient#2026` |
+| Front desk (admin) | `admin@queuesmart.test`   | `Admin#2026`   |
 
 The app finds the server on its own: on web it uses the same host on port
 4000, and in Expo Go it uses the laptop address from the QR code. If that
@@ -132,7 +143,7 @@ iPhone with Expo Go instead.
 
 ## 4. Project structure
 
-```
+````
 queuesmart-app/queuesmart-app/         the actual Expo project (package.json lives here)
   src/
     app/                        FRONT END — screens. File-based routes: the folder path IS the URL
@@ -191,7 +202,7 @@ import { useRouter } from 'expo-router';
 const router = useRouter();
 router.push('/admin/services');   // go forward
 router.back();                    // go back
-```
+````
 
 ---
 
@@ -213,6 +224,7 @@ git push -u origin feature/admin-dashboard
 Then open a pull request on GitHub and have a teammate review it.
 
 Rules that prevent most merge pain:
+
 - **Never commit directly to `main`.**
 - **Commit often, in your own name.** The TA grades contribution from commit
   history, so four commits on the last night looks the same as no work.
@@ -276,11 +288,11 @@ breaks the app in Expo Go 57.
 `npm audit` lists every package that sits above a vulnerable one, so three
 advisories show up as 21 lines.
 
-| Advisory | Where it comes from | Why it is accepted |
-|---|---|---|
-| `braces` ≤3.0.3 — DoS from deeply nested glob patterns ([GHSA-vfj7-8cjw-p6xm](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm)) | Metro's file watcher on your laptop (`metro-file-map` → `micromatch`) | Metro only expands glob patterns from our own config, never from user input. 3.0.3 is the newest release, so no fix exists. |
-| `node-forge` ≤1.4.0 — RSA signature check is too lenient ([GHSA-86w9-cpqp-85rv](https://github.com/advisories/GHSA-86w9-cpqp-85rv)) | `@expo/cli` code signing for `expo-updates`, on your laptop | We don't use `expo-updates` or code signing. 1.4.0 is the newest release, so no fix exists. |
-| `decode-uri-component` ≤0.4.2 — slow decoding of malformed `%` sequences ([GHSA-vcc3-ghjq-m6fr](https://github.com/advisories/GHSA-vcc3-ghjq-m6fr)) | `expo-router` 57 → `query-string` 7, **in the app** | At worst, a malicious deep link could freeze the app on that one phone; no data is exposed. The only fix (0.5.0) is ESM-only and breaks `query-string` 7, so it can't be overridden. SDK 58's router drops this dependency. |
+| Advisory                                                                                                                                            | Where it comes from                                                   | Why it is accepted                                                                                                                                                                                                          |
+| --------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `braces` ≤3.0.3 — DoS from deeply nested glob patterns ([GHSA-vfj7-8cjw-p6xm](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm))                   | Metro's file watcher on your laptop (`metro-file-map` → `micromatch`) | Metro only expands glob patterns from our own config, never from user input. 3.0.3 is the newest release, so no fix exists.                                                                                                 |
+| `node-forge` ≤1.4.0 — RSA signature check is too lenient ([GHSA-86w9-cpqp-85rv](https://github.com/advisories/GHSA-86w9-cpqp-85rv))                 | `@expo/cli` code signing for `expo-updates`, on your laptop           | We don't use `expo-updates` or code signing. 1.4.0 is the newest release, so no fix exists.                                                                                                                                 |
+| `decode-uri-component` ≤0.4.2 — slow decoding of malformed `%` sequences ([GHSA-vcc3-ghjq-m6fr](https://github.com/advisories/GHSA-vcc3-ghjq-m6fr)) | `expo-router` 57 → `query-string` 7, **in the app**                   | At worst, a malicious deep link could freeze the app on that one phone; no data is exposed. The only fix (0.5.0) is ESM-only and breaks `query-string` 7, so it can't be overridden. SDK 58's router drops this dependency. |
 
 The first two clear once Expo or Metro ships a patched release; upgrading
 within SDK 57 (`npx expo install expo@~57 --fix`) will pick that up. The third
@@ -312,28 +324,28 @@ numbers for instant form feedback; update it too.
 ahead of everyone who is not urgent; patients of the same urgency stay in
 arrival order.
 
-| # | Rule | Where you see it |
-|---|---|---|
-| 1 | **Visit types, not services.** Each has an expected duration, an urgency (Routine / Standard / Urgent) and a **daily capacity**. | Staff › Visit types |
-| 2 | **Check-in needs a reason for the visit** (3–120 characters). Only staff see it. | Patient › Check in |
-| 3 | **One check-in at a time.** Cancel the current one to choose a different visit type. | Patient › Check in |
-| 4 | **Check-in closes automatically when a line is full** (waiting ≥ capacity). Capacity can't be set below the number already in line. | "Full for today" / "Full" tags |
-| 5 | **Not for emergencies.** A 911 notice appears wherever a patient checks in. | Patient › Dashboard, Check in |
-| 6 | **Status follows your place in line:** *Waiting* → *Head to the office* once 2 or fewer patients are ahead → *It is your turn* when called. | Patient › Dashboard, My check-in |
-| 7 | **Front desk flow:** *Call next patient* → *Checked in* (name + date of birth confirmed at the desk) or *No-show* after a 10-minute grace period. Only one patient per line can be called at a time. | Staff › line screen |
-| 8 | **Privacy:** lists show first name + last initial ("Maria G."). Notifications never include the reason for the visit, because they can appear on a lock screen. | Everywhere |
-| 9 | **Closing a visit type stops new check-ins only.** Patients already in line keep their place. | Staff › Front desk toggles |
-| 10 | **A visit type can't be deleted while anyone is in its line** (or being called). Close it and let the line clear first. | Staff › Edit visit type |
+| #   | Rule                                                                                                                                                                                                 | Where you see it                 |
+| --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------- |
+| 1   | **Visit types, not services.** Each has an expected duration, an urgency (Routine / Standard / Urgent) and a **daily capacity**.                                                                     | Staff › Visit types              |
+| 2   | **Check-in needs a reason for the visit** (3–120 characters). Only staff see it.                                                                                                                     | Patient › Check in               |
+| 3   | **One check-in at a time.** Cancel the current one to choose a different visit type.                                                                                                                 | Patient › Check in               |
+| 4   | **Check-in closes automatically when a line is full** (waiting ≥ capacity). Capacity can't be set below the number already in line.                                                                  | "Full for today" / "Full" tags   |
+| 5   | **Not for emergencies.** A 911 notice appears wherever a patient checks in.                                                                                                                          | Patient › Dashboard, Check in    |
+| 6   | **Status follows your place in line:** _Waiting_ → _Head to the office_ once 2 or fewer patients are ahead → _It is your turn_ when called.                                                          | Patient › Dashboard, My check-in |
+| 7   | **Front desk flow:** _Call next patient_ → _Checked in_ (name + date of birth confirmed at the desk) or _No-show_ after a 10-minute grace period. Only one patient per line can be called at a time. | Staff › line screen              |
+| 8   | **Privacy:** lists show first name + last initial ("Maria G."). Notifications never include the reason for the visit, because they can appear on a lock screen.                                      | Everywhere                       |
+| 9   | **Closing a visit type stops new check-ins only.** Patients already in line keep their place.                                                                                                        | Staff › Front desk toggles       |
+| 10  | **A visit type can't be deleted while anyone is in its line** (or being called). Close it and let the line clear first.                                                                              | Staff › Edit visit type          |
 
 Registration asks for **full legal name and date of birth**, the two
 identifiers the front desk checks against a photo ID.
 
 **To demo the whole loop** in one session (data is in memory, so don't reload
-the page): register a patient → check in for *Minor Injury* → Profile › Log out
-→ *Office staff sign in* → open *Minor Injury* → call next until the patient
+the page): register a patient → check in for _Minor Injury_ → Profile › Log out
+→ _Office staff sign in_ → open _Minor Injury_ → call next until the patient
 is called → back out to the patient sign-in and log in again: the dashboard
-says *It is your turn* → back to staff → *Checked in* → the patient's visit
-history shows *Seen*.
+says _It is your turn_ → back to staff → _Checked in_ → the patient's visit
+history shows _Seen_.
 
 Kept out on purpose, to keep A2 simple: same-day rescheduling, appointment
 times, insurance capture, SMS (A1's external system), and automatic no-show
