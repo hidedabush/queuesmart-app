@@ -3,13 +3,10 @@ import { useRef, useState } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Button from '../frontend/components/Button';
 import Field from '../frontend/components/Field';
-import { useServices } from '../frontend/state/ServicesStore';
 import { spacing, type } from '../frontend/theme';
 
 export default function AdminLoginScreen() {
   const router = useRouter();
-  const { login, logout } = useServices();
-  const [busy, setBusy] = useState(false);
   const emailRef = useRef(null);
   const passwordRef = useRef(null);
   const [email, setEmail] = useState('');
@@ -38,29 +35,13 @@ export default function AdminLoginScreen() {
     return Object.keys(nextErrors).length === 0;
   };
 
-  const handleLogin = async () => {
-    if (busy) return;
+  const handleLogin = () => {
     if (!validate()) {
       if (!email.trim() || !validateEmail(email)) {
         emailRef.current?.focus();
       } else {
         passwordRef.current?.focus();
       }
-      return;
-    }
-    setBusy(true);
-    const result = await login(email.trim(), password);
-    setBusy(false);
-    if (result.error) {
-      setErrors(result.fields ?? { password: result.message });
-      passwordRef.current?.focus();
-      return;
-    }
-    // A patient account can't open the front desk, even with the right password.
-    if (result.user.role !== 'admin') {
-      logout();
-      setErrors({ email: 'This account is not a staff account. Use the patient sign in.' });
-      emailRef.current?.focus();
       return;
     }
     router.replace('/admin/dashboard');
@@ -150,7 +131,7 @@ export default function AdminLoginScreen() {
           />
         </View>
 
-        <Button label={busy ? 'Signing in…' : 'Staff sign in'} onPress={handleLogin} disabled={busy} />
+        <Button label="Staff sign in" onPress={handleLogin} />
 
         <Pressable
           style={styles.backLink}

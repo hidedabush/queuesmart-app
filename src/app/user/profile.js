@@ -24,7 +24,7 @@ function formatDob(dob) {
 export default function UserProfile() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { patient, userEmail, logout, changePassword } = useServices();
+  const { patient, userEmail, setPatient } = useServices();
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [message, setMessage] = useState('');
@@ -43,7 +43,7 @@ export default function UserProfile() {
     ? 'Passwords do not match.'
     : undefined;
 
-  async function savePassword() {
+  function savePassword() {
     setMessage('');
     setError('');
     if (passwordChecks.some((rule) => !rule.met)) {
@@ -54,18 +54,13 @@ export default function UserProfile() {
       setError(confirmPassword ? 'Passwords do not match.' : 'Please confirm your password.');
       return;
     }
-    const result = await changePassword(newPassword);
-    if (result.error) {
-      setError(result.fields?.password ?? result.message);
-      return;
-    }
     setNewPassword('');
     setConfirmPassword('');
     setMessage('Password updated.');
   }
 
   function handleLogout() {
-    logout();
+    setPatient({});
     router.replace('/login');
   }
 
