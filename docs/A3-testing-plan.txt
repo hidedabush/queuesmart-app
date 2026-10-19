@@ -1,0 +1,291 @@
+===============================================================================
+ QUEUESMART - ASSIGNMENT 3 TESTING PLAN
+ Unit tests, integration tests and code coverage for server/
+===============================================================================
+
+ Brief: "Backend code must include unit tests covering core business logic
+ and validation rules. Target code coverage: 70-80%. Focus on meaningful
+ tests, not perfect coverage."
+
+ Our target: 75% of lines, functions and branches across server/src. The
+ test command fails below that, so coverage can't drop silently.
+
+ Related: docs/A3-backend-proposal.txt (design), docs/A3-api-spec.txt
+ (the expected responses the tests check).
+
+
+-------------------------------------------------------------------------------
+ 1. TOOLS
+-------------------------------------------------------------------------------
+
+   Tool                  Why
+   --------------------  ---------------------------------------------------------
+   Vitest                Runs our ES-module code as-is (import/export) with no
+                         Babel setup, and uses the same expect() API as Jest.
+   @vitest/coverage-v8   Line / branch / function coverage from V8. Writes a
+                         terminal summary and an HTML report.
+   supertest             Sends real HTTP requests to the Express app in memory.
+                         No port, no running server.
+
+   All three are devDependencies of server/package.json only. The Expo app's
+   dependencies don't change.
+
+   server/package.json scripts
+     "test"           : "vitest run"
+     "test:watch"     : "vitest"
+     "test:coverage"  : "vitest run --coverage"
+
+   server/vitest.config.js
+     test.environment     = "node"
+     test.setupFiles      = ["tests/setup.js"]
+     coverage.provider    = "v8"
+     coverage.include     = ["src/**/*.js"]
+     coverage.exclude     = ["src/index.js", "src/database/seed.js"]
+     coverage.reporter    = ["text", "html"]
+     coverage.thresholds  = { lines: 75, functions: 75, branches: 75, statements: 75 }
+
+   tests/setup.js
+     beforeEach: db.reset()          reload seed rows, fresh copies
+                 outbox.clear()      empty notification outbox
+                 sms.sent.length = 0 empty the mock gateway's sent list
+     Every test starts from the same known state and can run in any order.
+
+
+-------------------------------------------------------------------------------
+ 2. FOLDER LAYOUT
+-------------------------------------------------------------------------------
+
+   server/tests/                (as built - 9 files, 131 tests)
+     setup.js                   resets db, outbox and SMS mock before each test
+     helpers.js                 adminToken(), patientToken(), as(token) ->
+                                supertest with a Bearer header, anon(),
+                                validService(overrides)
+     unit/
+       validation.test.js       validation/rules.js, schemas.js, validate.js
+       rules-and-wait.test.js   officeRules.js + waitEstimate.js
+       authService.test.js      passwords, register, login, tokens
+       servicesService.test.js  visit type create/update/open/delete
+       queueService.test.js     join/leave, ordering, serve next, remove
+       notifications.test.js    triggers, dedupe, privacy, SMS mock, outbox
+       historyStats.test.js     history, statistics, in-memory db
+       errorHandler.test.js     409 and 500 error shapes
+     integration/
+       api.test.js              every route over HTTP (supertest)
+
+
+-------------------------------------------------------------------------------
+ 3. UNIT TEST CASES
+-------------------------------------------------------------------------------
+
+ Boundary values are tested on both sides: the last valid value and the
+ first invalid one.
+
+ 3.1 Validation rules  (rules.test.js, schemas.test.js)          owner: A
+   required
+     - missing key, null, "" and "   " all fail; "a" passes
+   types
+     - expectedDuration: 20 passes; "20", 20.5, true, null fail
+     - isOpen: true/false pass; "true" and 1 fail
+     - name: 42 fails ("Must be text.")
+   length limits
+     - service name: 2 chars fail, 3 pass, 100 pass, 101 fail
+     - description: "" is missing (required), 300 passes, 301 fails
+     - reason: 2 fail, 3 pass, 120 pass, 121 fail; whitespace trimmed first
+     - person name: one word fails, "Ana Torres" passes, 81 chars fail
+     - email: 254 passes, 255 fails
+     - password: 7 fail, 8 pass, 64 pass, 65 fail
+   ranges / enums
+     - expectedDuration: 0 fails, 1 passes, 120 passes, 121 fails
+     - capacity: 0 fails, 1 passes, 50 passes, 51 fails; missing -> default 15
+     - priority (service): low/medium/high pass; "urgent" and "HIGH" fail
+     - priority (entry): normal/urgent pass; "high" fails
+     - outcome: seen/no-show pass; "done" fails
+     - direction: -1/1 pass; 0 and 2 fail
+   formats
+     - email: "a@b.co" passes; "a@b", "a b@c.com" and "@c.com" fail
+     - dob: "02/29/2024" passes (leap year); "02/29/2025", "13/01/2000",
+       "1990-01-01" and a future date fail; age 121 fails
+     - phone: "713-555-0101" and "(713) 555 0101" pass; 9 or 11 digits fail
+     - password: each missing class (upper/lower/digit/symbol) fails alone
+   schemas
+     - several bad fields -> every one reported in a single result
+     - each field reports only its first failing rule
+     - PATCH schema: an empty body fails, a single valid field passes
+     - updateEntry: neither or both of direction/priority fail
+
+ 3.2 Office rules  (officeRules.test.js)                          owner: C
+   - checkInBlocker returns, in order: missing, already-checked-in, closed,
+     full (waiting === capacity), null
+   - displayName: "Maria Gonzalez" -> "Maria G."; "Cher" -> "Cher";
+     "" -> "Patient"; extra spaces ignored
+   - patientStatus: called -> "called"; 2 ahead -> "head-in"; 3 ahead -> "waiting"
+
+ 3.3 Wait-time estimation  (waitEstimate.test.js)                 owner: B
+   - waitRange(0, 15) -> { low: 0, high: 0 }
+   - waitRange(3, 15) -> { low: 45, high: 59 }   (45 x 1.3 = 58.5 -> 59)
+   - estimateWait: closed -> null; open with 0 waiting -> null
+   - formatWait: "No wait", "Closed", "45-59 min"
+   - queue position: a patient 3rd in line gets peopleAhead 2 x duration
+
+ 3.4 Authentication  (authService.test.js)                        owner: A
+   - hashPassword: same password, two salts -> different hashes
+   - verifyPassword: right one passes, wrong one fails
+   - register: stores lower-cased email, role "user", no plain password
+   - register: duplicate email (any case) -> email-taken
+   - login: wrong password and unknown email give the same 401 message
+   - signToken / verifyToken round trip returns { userId, role }
+   - verifyToken: altered payload, altered signature, expired (fake timers
+     with vi.setSystemTime) -> rejected
+
+ 3.5 Service management  (servicesService.test.js)                owner: B
+   - create: isOpen true, capacity defaults to 15, id assigned
+   - create: duplicate name (case-insensitive) -> name-taken
+   - list: waiting and hasCalled are computed from the line
+   - update: capacity below the waiting count -> capacity-below-waiting
+   - update: renaming to its own name is allowed
+   - setOpen(false): existing entries keep their place
+   - delete with patients in line -> patients-in-line; after the line
+     clears -> deleted
+
+ 3.6 Queue management  (queueService.test.js)                     owner: C
+   join / leave
+     - join puts the patient at the back; position = waiting + 1
+     - second join while already in a line -> already-checked-in
+     - join a closed line -> closed; a full line -> full
+     - leave removes the entry and writes history "cancelled"
+   ordering (arrival + priority)
+     - with no urgent entries, the line is in arrival order
+     - triage the 4th patient to urgent -> they are 1st and the others
+       keep their relative order
+     - two urgent patients keep arrival order between them
+     - move up/down swaps neighbours at the same priority only; at the
+       edge of a priority level it is a no-op
+   serve next
+     - callNext calls the first patient in sorted order (urgent first)
+     - callNext while someone is called -> already-calling
+     - callNext on an empty line -> empty
+     - resolveCalled("seen" / "no-show") removes the entry and writes history
+     - resolveCalled with nobody called -> nothing-called
+     - removeEntry on a called or waiting entry -> history "removed"
+   getMine
+     - returns position, peopleAhead and estimatedWait for this user only
+     - status becomes "head-in" at 2 ahead and "called" when called
+
+ 3.7 Notifications  (notifications.test.js, smsGateway.test.js)   owner: D
+   - joined: one notification for the joiner, with position and wait
+   - almost-up: after callNext, the patient now 2nd from the front gets
+     exactly one "almost-up"
+   - dedupe: further reshuffles don't send a second "almost-up" for that
+     entry
+   - called: the called patient gets "called"
+   - privacy: no notification text contains the entry's reason
+   - SMS: sent when the user has a phone number; skipped (in-app only)
+     when phone is null; channels field reflects which happened
+   - MockSmsGateway.send records { to, text } and logs it
+
+ 3.8 History and statistics  (historyService.test.js, statsService.test.js)
+                                                                  owner: C / B
+   - record copies serviceName, so a deleted visit type still reads correctly
+   - listForUser returns only that user's rows, newest first
+   - stats: served / noShows / cancelled counts for today only
+   - stats: averageWaitMinutes is the mean of calledAt - arrivedAt;
+     null with no seen visits
+
+ 3.9 Database stand-in  (db.test.js)                              owner: B
+   - rows are copies: changing a returned object doesn't change the table
+   - update merges a patch; remove deletes; reset restores the seed
+   - repository finders: findByEmail is case-insensitive,
+     listWaiting(serviceId) excludes called entries and other lines
+
+
+-------------------------------------------------------------------------------
+ 4. INTEGRATION TEST CASES  (supertest, one file per route group)
+-------------------------------------------------------------------------------
+
+ These check that routes, middleware and the error contract are wired up
+ correctly. The business logic itself is covered by the unit tests above.
+
+   auth.api.test.js
+     - register 201 -> login 200 returns a token -> /auth/me 200
+     - register with an empty body -> 400 listing every required field
+     - login with a bad password -> 401
+   services.api.test.js
+     - GET /services without a token -> 401
+     - POST /services as patient -> 403; as admin -> 201
+     - POST /services with bad fields -> 400 { error, fields }
+     - DELETE /services/:id while patients are in line -> 409 patients-in-line
+     - GET /services/unknown -> 404
+   queue.api.test.js
+     - patient joins -> 201, GET /queue/me shows the position
+     - full scenario: patient joins Minor Injury -> admin calls next until
+       the patient is called -> /queue/me status "called" -> admin resolves
+       "seen" -> /history/me has "seen" (the README's demo loop)
+     - patient calls a staff route -> 403
+     - PATCH /queue/:id { priority: "urgent" } re-sorts the line
+   notifications.api.test.js
+     - after joining, GET /notifications/me has "joined"
+     - PATCH read -> read true; reading someone else's notification -> 404
+     - read-all -> unread 0
+   history-stats.api.test.js
+     - /history/me only returns the caller's rows
+     - /stats as admin 200; as patient 403; ?date=bad -> 400
+   errors.api.test.js
+     - unknown route -> 404 { error: "not-found" }
+     - malformed JSON body -> 400 { error: "validation" }
+     - a thrown error inside a controller -> 500 { error: "server" }
+
+
+-------------------------------------------------------------------------------
+ 5. COVERAGE EXPECTATIONS BY AREA
+-------------------------------------------------------------------------------
+
+   Area                          Target   Reason
+   ----------------------------  -------  ------------------------------------------
+   api/validation/               95%+     pure functions; cheap to test exhaustively
+   api/services/ (business)      85%+     the core logic the brief asks about
+   notifications/                85%+     decision rules are the point of the module
+   api/middleware/               80%+     each branch (401/403/400) has a test
+   api/routes + controllers      70%+     covered by the integration tests
+   database/                     70%+     thin; covered indirectly plus db.test.js
+   ----------------------------  -------
+   Overall threshold             75%      enforced in vitest.config.js
+
+   Excluded from coverage: src/index.js (only calls listen) and seed.js
+   (data, not logic).
+
+
+-------------------------------------------------------------------------------
+ 6. HOW TO RUN AND WHAT TO SUBMIT
+-------------------------------------------------------------------------------
+
+   cd server
+   npm install
+   npm test                  all tests, pass/fail summary
+   npm run test:coverage     tests + coverage table in the terminal
+                             + HTML report at server/coverage/index.html
+
+   For the report:
+     - a screenshot of the terminal coverage table (all four columns >= 75%)
+     - a screenshot of coverage/index.html opened in a browser
+     - the test count from the Vitest summary line
+
+   Add server/coverage/ to .gitignore. It is generated output.
+
+
+-------------------------------------------------------------------------------
+ 7. RULES FOR WRITING TESTS
+-------------------------------------------------------------------------------
+
+   - Name a test after the rule it checks, e.g.
+     "rejects capacity below the number waiting", not "test update 3".
+   - One behaviour per test. Arrange with helpers, act once, assert the
+     result and the error code.
+   - Assert error codes ("full", "name-taken"), not message text, so
+     changing a message doesn't break tests. The only exception is the
+     privacy test, which checks the text on purpose.
+   - Never depend on another test's leftovers. setup.js resets everything.
+   - Use vi.setSystemTime for anything time-based (token expiry, stats
+     dates, history dates). Never wait on real time.
+   - Each owner adds tests in the same PR as the code (see team split in
+     A3-backend-proposal.txt section 7). A PR that drops coverage below
+     75% is not merged.

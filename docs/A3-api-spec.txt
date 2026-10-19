@@ -1,0 +1,345 @@
+===============================================================================
+ QUEUESMART - ASSIGNMENT 3 API SPECIFICATION
+ Back-end / API [Application] - REST over HTTP/JSON
+===============================================================================
+
+ Base URL        http://<laptop-LAN-IP>:4000   (EXPO_PUBLIC_API_URL)
+ Content type    application/json for every request and response body
+ Auth            Authorization: Bearer <token>  (from POST /auth/login)
+ Storage         In memory. Data resets when the server restarts.
+
+ Role column:  public = no token needed
+               user   = any signed-in account (patient or admin)
+               admin  = role 'admin' only (403 for patients)
+
+ Design doc:  docs/A3-backend-proposal.txt
+
+
+-------------------------------------------------------------------------------
+ 0. ENDPOINT INDEX
+-------------------------------------------------------------------------------
+
+   Module          Method  Path                              Role    Success
+   --------------  ------  --------------------------------  ------  -------
+   Auth            POST    /auth/register                    public  201
+                   POST    /auth/login                       public  200
+                   GET     /auth/me                          user    200
+                   PATCH   /auth/me/password                 user    204
+   Services        GET     /services                         user    200
+                   GET     /services/:id                     user    200
+                   POST    /services                         admin   201
+                   PATCH   /services/:id                     admin   200
+                   PATCH   /services/:id/open                admin   200
+                   DELETE  /services/:id                     admin   204
+   Queue (patient) POST    /services/:id/queue               user    201
+                   GET     /queue/me                         user    200
+                   DELETE  /queue/me                         user    204
+   Queue (staff)   GET     /services/:id/queue               admin   200
+                   POST    /services/:id/queue/call          admin   200
+                   POST    /services/:id/queue/called        admin   200
+                   PATCH   /queue/:entryId                   admin   200
+                   DELETE  /queue/:entryId                   admin   204
+   Notifications   GET     /notifications/me                 user    200
+                   PATCH   /notifications/:id/read           user    200
+                   POST    /notifications/me/read-all        user    200
+   History         GET     /history/me                       user    200
+   Statistics      GET     /stats                            admin   200
+   Health          GET     /health                           public  200
+
+
+-------------------------------------------------------------------------------
+ 1. ERROR CONTRACT  (applies to every endpoint)
+-------------------------------------------------------------------------------
+
+   Status  Body                                                When
+   ------  --------------------------------------------------  ------------------------------
+   400     { error: "validation", fields: { <field>: msg } }   required / type / length /
+                                                               format check failed
+   401     { error: "unauthenticated", message }               no token, bad signature,
+                                                               expired, or wrong login
+   403     { error: "forbidden", message }                     signed in but not admin
+   404     { error: "not-found", message }                     service / entry / notification
+                                                               id does not exist
+   409     { error: <rule>, message }                          a business rule blocked it
+   500     { error: "server", message }                        unexpected error (logged)
+
+   409 rule codes
+     full                    line has reached capacity
+     closed                  visit type is closed to new check-ins
+     already-checked-in      patient already has an active check-in
+     already-calling         a patient is already called for this line
+     empty                   nobody is waiting to call
+     nothing-called          resolve was sent with nobody called
+     patients-in-line        visit type can't be deleted while anyone is in line
+     capacity-below-waiting  new capacity is lower than the number waiting
+     email-taken             email is already registered
+     name-taken              a visit type with that name exists (case-insensitive)
+
+   Field validation order: required -> type -> length/range -> format.
+   Each field reports its first failing rule only. All failing fields are
+   returned together. Unknown body fields are ignored. String fields are
+   trimmed before the checks run.
+
+
+-------------------------------------------------------------------------------
+ 2. FIELD RULES  (shared by the schemas below)
+-------------------------------------------------------------------------------
+
+   Field             Type      Required  Rule                                   Message on failure
+   ----------------  --------  --------  -------------------------------------  ---------------------------------------
+   name (person)     string    yes       3-80 chars, at least 2 words           "Enter your first and last name."
+   dob               string    yes       MM/DD/YYYY, real calendar date,        "Enter a real date as MM/DD/YYYY."
+                                         age 0-120 (stored as YYYY-MM-DD)
+   email             string    yes       ^[^\s@]+@[^\s@]+\.[^\s@]+$, <= 254      "Enter a valid email address."
+                                         chars, stored lower-case
+   password          string    yes       8-64 chars, 1 upper, 1 lower,          "Password does not meet all
+                                         1 digit, 1 symbol                       requirements."
+   phone             string    no        exactly 10 digits after removing       "Enter a 10-digit phone number."
+                                         spaces, dashes and parentheses
+   name (service)    string    yes       3-100 chars, unique ignoring case      "Use 3-100 characters."
+   description       string    yes       1-300 chars                            "Keep it to 300 characters or fewer."
+   expectedDuration  integer   yes       1-120 (minutes; matches the A2 form)   "Enter a whole number from 1 to 120."
+   priority (svc)    enum      yes       low | medium | high                    "Choose low, medium or high."
+   capacity          integer   no        1-50, default 15                       "Enter a whole number from 1 to 50."
+   isOpen            boolean   yes       true | false                           "Must be true or false."
+   reason            string    yes       3-120 chars                            "Use at least 3 characters." /
+                                                                                "Keep it to 120 characters or fewer."
+   outcome           enum      yes       seen | no-show                         "Choose seen or no-show."
+   direction         integer   one of    -1 | 1                                 "Direction must be -1 or 1."
+   priority (entry)  enum      the two   normal | urgent                        "Choose normal or urgent."
+
+   Type failures use one message per type, e.g. "Must be a whole number." for
+   expectedDuration: "20" and "Must be text." for name: 42. Numbers sent as
+   strings are rejected, not converted.
+
+
+-------------------------------------------------------------------------------
+ 3. AUTHENTICATION
+-------------------------------------------------------------------------------
+
+ POST /auth/register                                                    public
+   Body      { name, dob, email, password, phone? }
+   201       { user: { id, name, email, dob, phone, role: "user" } }
+   400       validation (any field in section 2)
+   409       email-taken
+   Notes     Always creates role "user". The password is hashed with scrypt
+             and a salt and is never returned.
+
+   Example
+     -> { "name": "Ana Torres", "dob": "03/14/1995",
+          "email": "ana@example.com", "password": "Queue#2026", "phone": "7135550101" }
+     <- 201 { "user": { "id": "u17", "name": "Ana Torres", "email": "ana@example.com",
+                        "dob": "1995-03-14", "phone": "7135550101", "role": "user" } }
+
+ POST /auth/login                                                       public
+   Body      { email, password }   (only checks present + email format)
+   200       { token, user: { id, name, email, role } }
+   400       validation
+   401       unauthenticated  "Email or password is incorrect."
+             (same message for an unknown email and a wrong password)
+   Notes     The token expires after 8 hours. admin-login.js shows an error
+             when user.role is not "admin".
+
+ GET /auth/me                                                           user
+   200       { user: { id, name, email, dob, phone, role } }
+   401       unauthenticated
+
+ PATCH /auth/me/password                                                user
+   Body      { password }   (same strong-password rule as register)
+   204       (no body)
+   400       validation
+
+
+-------------------------------------------------------------------------------
+ 4. SERVICE MANAGEMENT
+-------------------------------------------------------------------------------
+
+ Service response shape (every endpoint below):
+   { id, name, description, expectedDuration, priority, capacity, isOpen,
+     waiting,        // number in the waiting state, computed
+     hasCalled,      // someone is currently called, computed
+     estimatedWait } // { low, high } in minutes, or null if closed/empty
+
+ GET /services                                                          user
+   200       { services: [ Service, ... ] }   in seed / creation order
+
+ GET /services/:id                                                      user
+   200       { service: Service }
+   404       not-found
+
+ POST /services                                                         admin
+   Body      { name, description, expectedDuration, priority, capacity? }
+   201       { service: Service }   isOpen starts as true
+   400       validation
+   409       name-taken
+   401/403   not signed in / not admin
+
+   Example (400)
+     -> { "name": "X", "expectedDuration": "abc", "priority": "urgent" }
+     <- 400 { "error": "validation", "fields": {
+                "name": "Use 3-100 characters.",
+                "description": "Description is required.",
+                "expectedDuration": "Must be a whole number.",
+                "priority": "Choose low, medium or high." } }
+
+ PATCH /services/:id                                                    admin
+   Body      any subset of { name, description, expectedDuration,
+             priority, capacity }. At least one field is required.
+   200       { service: Service }
+   400       validation (only the fields sent are checked)
+   404       not-found
+   409       name-taken | capacity-below-waiting
+
+ PATCH /services/:id/open                                               admin
+   Body      { isOpen }
+   200       { service: Service }
+   Notes     Closing stops new check-ins only. Patients already in line keep
+             their place (office rule #9).
+
+ DELETE /services/:id                                                   admin
+   204       (no body)
+   404       not-found
+   409       patients-in-line
+
+
+-------------------------------------------------------------------------------
+ 5. QUEUE MANAGEMENT
+-------------------------------------------------------------------------------
+
+ Line ordering for every list below:
+   1. entry priority: urgent before normal
+   2. order ascending (arrival order; staff moves swap within one level)
+
+ MyEntry response shape:
+   { id, serviceId, serviceName, reason, priority,
+     status,          // "waiting" | "head-in" | "called"   (patientStatus)
+     position,        // 1-based place in line, 0 when called
+     peopleAhead,
+     estimatedWait,   // { low, high }
+     arrivedAt, calledAt }
+
+ LineEntry response shape (staff):
+   { id, userId,
+     patientName, dob,          // staff confirm these at the desk
+     displayName,               // "Maria G." for on-screen lists (privacy rule #8)
+     reason, priority, status, order, arrivedAt, calledAt, position }
+
+ --- Patient -----------------------------------------------------------------
+
+ POST /services/:id/queue                                               user
+   Body      { reason }
+   201       { entry: MyEntry }
+   400       validation (reason)
+   404       not-found (service)
+   409       already-checked-in | closed | full
+   Triggers  notifications: "joined" for the patient, then "almost-up"
+             checks for the line
+
+ GET /queue/me                                                          user
+   200       { entry: MyEntry }  or  { entry: null }  when not in any line
+
+ DELETE /queue/me                                                       user
+   204       (no body). history row outcome = "cancelled"
+   404       not-found (no active check-in)
+   Triggers  queue.changed -> "almost-up" checks for the people behind
+
+ --- Staff (front desk) ------------------------------------------------------
+
+ GET /services/:id/queue                                                admin
+   200       { called: LineEntry | null, waiting: [ LineEntry, ... ] }
+   404       not-found
+
+ POST /services/:id/queue/call                                          admin
+   Body      none
+   200       { called: LineEntry }   first entry in sorted order
+   409       already-calling | empty
+   Triggers  "called" for that patient; queue.changed for the rest
+
+ POST /services/:id/queue/called                                        admin
+   Body      { outcome: "seen" | "no-show" }
+   200       { resolved: LineEntry }   entry removed from the line
+   400       validation
+   409       nothing-called
+   Notes     Writes a history row with the outcome.
+
+ PATCH /queue/:entryId                                                  admin
+   Body      exactly one of { direction: -1 | 1 } or
+             { priority: "normal" | "urgent" }
+   200       { waiting: [ LineEntry, ... ] }   the re-sorted line
+   400       validation (neither or both sent, or a bad value)
+   404       not-found
+   Notes     A move only swaps with the neighbour at the same priority. At
+             the edge of a priority level it changes nothing (200, same line).
+   Triggers  queue.changed
+
+ DELETE /queue/:entryId                                                 admin
+   204       history row outcome = "removed"
+   404       not-found
+   Triggers  queue.changed
+
+
+-------------------------------------------------------------------------------
+ 6. NOTIFICATIONS
+-------------------------------------------------------------------------------
+
+ Notification shape:
+   { id, type,            // "joined" | "almost-up" | "called"
+     title, message,      // never contains the visit reason
+     serviceId, entryId, read, createdAt,
+     channels }           // ["in-app"] or ["in-app", "sms"]
+
+ Message templates (notifications/messages.js):
+   joined     "<Service>: you're checked in"   "You're #<pos> in line, about <low>-<high> min."
+   almost-up  "<Service>: head to the office"  "<n> or fewer patients are ahead of you."
+   called     "<Service>: it's your turn"      "Please come to the front desk now."
+
+ GET /notifications/me                                                  user
+   200       { notifications: [ Notification, ... ], unread: <number> }
+             newest first
+
+ PATCH /notifications/:id/read                                          user
+   200       { notification: Notification }
+   404       not-found (including someone else's notification)
+
+ POST /notifications/me/read-all                                        user
+   200       { unread: 0 }
+
+
+-------------------------------------------------------------------------------
+ 7. HISTORY AND STATISTICS
+-------------------------------------------------------------------------------
+
+ GET /history/me                                                        user
+   200       { history: [ { id, serviceId, serviceName, date, joinedAt,
+                            leftAt, outcome }, ... ] }   newest first
+   Notes     Only the caller's own rows. outcome is
+             seen | no-show | cancelled | removed.
+
+ GET /stats                                                             admin
+   Query     ?date=YYYY-MM-DD   (optional, default today; 400 if malformed)
+   200       { date, services: [ { serviceId, name, currentlyWaiting,
+                                   served, noShows, cancelled, removed,
+                                   averageWaitMinutes }, ... ] }
+   Notes     averageWaitMinutes = mean of (calledAt - arrivedAt) for
+             today's "seen" rows, or null when there are none.
+
+
+-------------------------------------------------------------------------------
+ 8. HEALTH
+-------------------------------------------------------------------------------
+
+ GET /health                                                            public
+   200       { ok: true }   the app's quick check that the server is reachable
+
+
+-------------------------------------------------------------------------------
+ 9. SEED ACCOUNTS AND DATA  (server/src/database/seed.js)
+-------------------------------------------------------------------------------
+
+   admin@queuesmart.test    Admin#2026     role admin
+   patient@queuesmart.test  Patient#2026   role user, phone set, has past history
+   + one user row for each of the 15 seeded patients in line (no login needed)
+   + the 5 A2 visit types (Sick Visit, Minor Injury, Lab Work,
+     Vaccinations, Prescription Refill [closed])
+
+   These are demo credentials for in-memory data only.

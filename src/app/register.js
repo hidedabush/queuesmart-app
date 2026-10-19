@@ -32,7 +32,8 @@ function parseDob(value) {
 
 export default function RegisterScreen() {
   const router = useRouter();
-  const { setPatient } = useServices();
+  const { register } = useServices();
+  const [busy, setBusy] = useState(false);
   const nameRef = useRef(null);
   const dobRef = useRef(null);
   const emailRef = useRef(null);
@@ -89,9 +90,25 @@ export default function RegisterScreen() {
     return Object.keys(nextErrors).length === 0;
   };
 
-  const handleRegister = () => {
-    if (!validate()) return;
-    setPatient({ name: name.trim().replace(/\s+/g, ' '), dob: parseDob(dob), email: email.trim() });
+  const handleRegister = async () => {
+    if (busy || !validate()) return;
+    setBusy(true);
+    // The server checks every field again and creates the account.
+    const result = await register({
+      name: name.trim().replace(/\s+/g, ' '),
+      dob: dob.trim(),
+      email: email.trim(),
+      password,
+    });
+    setBusy(false);
+    if (result.error) {
+      setErrors(
+        result.error === 'email-taken'
+          ? { email: result.message }
+          : result.fields ?? { confirmPassword: result.message }
+      );
+      return;
+    }
     router.replace('/user/dashboard');
   };
 
@@ -255,7 +272,11 @@ export default function RegisterScreen() {
         </View>
 
         <View style={styles.buttonWrap}>
-          <Button label="Create account" onPress={handleRegister} />
+          <Button
+            label={busy ? 'Creating account…' : 'Create account'}
+            onPress={handleRegister}
+            disabled={busy}
+          />
         </View>
       </ScrollView>
     </KeyboardAvoidingView>

@@ -2,8 +2,12 @@ import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { FlatList, KeyboardAvoidingView, Platform, StyleSheet, Text, View } from 'react-native';
 
-import { EMERGENCY_NOTICE, REASON_MAX, validateReason } from '../../api/queue';
-import { formatWait } from '../../api/services';
+import {
+  EMERGENCY_NOTICE,
+  REASON_MAX,
+  formatWait,
+  validateReason,
+} from '../../frontend/rules';
 
 import {
   useQueue,
@@ -71,15 +75,19 @@ export default function JoinQueue() {
     setReasonError(null);
   }
 
-  function confirmCheckIn(service) {
+  async function confirmCheckIn(service) {
     const error = validateReason(reason);
     if (error) {
       setReasonError(error);
       return;
     }
-    const result = checkIn(service.id, reason);
+    const result = await checkIn(service.id, reason.trim());
     if (result.error) {
-      setReasonError(result.message ?? 'This visit type just became unavailable. Choose another.');
+      setReasonError(
+        result.fields?.reason ??
+          result.message ??
+          'This visit type just became unavailable. Choose another.'
+      );
       return;
     }
     setChoosingId(null);

@@ -36,8 +36,8 @@ export default function QueueStatus() {
     else router.replace('/user/join-queue');
   }
 
-  function confirmCancel() {
-    cancelCheckIn();
+  async function confirmCancel() {
+    await cancelCheckIn();
     goToCheckIn();
   }
 

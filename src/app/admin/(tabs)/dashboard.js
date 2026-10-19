@@ -29,7 +29,7 @@ import { colors, fonts, layout, radius, spacing, type } from '../../../frontend/
  */
 export default function AdminDashboard() {
   const router = useRouter();
-  const { services, setQueueOpen } = useServices();
+  const { services, setQueueOpen, stats } = useServices();
   const { width, isXL, isTablet, gutter } = useLayout();
   // Summary beside the list only when both get a comfortable width.
   const split = isXL;
@@ -47,8 +47,9 @@ export default function AdminDashboard() {
       openCount: open.length,
       total: services.length,
       busiest: longest && longest.waiting > 0 ? longest : null,
+      today: totalsForToday(stats),
     };
-  }, [services]);
+  }, [services, stats]);
 
   const openQueue = (id) => router.push(`/admin/queue/${id}`);
 
@@ -141,8 +142,22 @@ function LiveDot({ active }) {
   );
 }
 
+// Today's totals across every visit type, from GET /stats.
+function totalsForToday(stats) {
+  if (!stats) return null;
+  let served = 0;
+  let noShows = 0;
+  let waitMinutes = 0;
+  stats.services.forEach((s) => {
+    served += s.served;
+    noShows += s.noShows;
+    waitMinutes += (s.averageWaitMinutes ?? 0) * s.served;
+  });
+  return { served, noShows, averageWait: served ? Math.round(waitMinutes / served) : null };
+}
+
 function Summary({ summary, heroSize, onOpenBusiest }) {
-  const { waiting, openCount, total, open, busiest } = summary;
+  const { waiting, openCount, total, open, busiest, today } = summary;
   const live = openCount > 0;
 
   return (
@@ -186,6 +201,13 @@ function Summary({ summary, heroSize, onOpenBusiest }) {
       </View>
 
       <LoadBar open={open} busiestId={busiest?.id} />
+
+      {today ? (
+        <Text style={[type.label, { marginTop: spacing.md }]}>
+          Today · {today.served} seen · {today.noShows} no-shows
+          {today.averageWait !== null ? ` · avg wait ${today.averageWait} min` : ''}
+        </Text>
+      ) : null}
 
       {busiest ? (
         <Pressable

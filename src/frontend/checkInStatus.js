@@ -1,4 +1,4 @@
-import { HEAD_IN_AHEAD, NO_SHOW_GRACE_MINUTES } from '../api/queue';
+import { HEAD_IN_AHEAD, NO_SHOW_GRACE_MINUTES } from './rules';
 
 /**
  * What the patient is told at each stage of a check-in. Shared by the

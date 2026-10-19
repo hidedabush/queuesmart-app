@@ -1,46 +1,46 @@
-import * as services from '../backend/servicesService';
+import { request } from './client';
 
 /**
- * Services API. This and queue.js are the only files the front end imports
- * from outside src/frontend/.
+ * Services API (visit types). This, queue.js, auth.js and notifications.js
+ * are the only files the front end uses to reach the server; the screens use
+ * them through src/frontend/state/ServicesStore.js.
  *
- * In A2 each function calls the backend module directly. In A3 the bodies
- * become network requests (the route each one maps to is noted beside it);
- * the names and return shapes stay the same, so the screens do not change.
+ * Each service comes back with `waiting`, `hasCalled` and `estimatedWait`
+ * worked out by the server.
  */
 
 // GET /services
-export function listServices() {
-  return services.listServices();
+export async function listServices() {
+  return (await request('GET', '/services')).services;
 }
 
 // GET /services/:id
-export function getService(id) {
-  return services.getService(id);
+export async function getService(id) {
+  return (await request('GET', `/services/${id}`)).service;
 }
 
-// POST /services
-export function createService(draft) {
-  return services.createService(draft);
+// POST /services  (staff only)
+export async function createService(draft) {
+  return (await request('POST', '/services', draft)).service;
 }
 
-// PATCH /services/:id
-export function updateService(id, draft) {
-  return services.updateService(id, draft);
+// PATCH /services/:id  (staff only)
+export async function updateService(id, draft) {
+  return (await request('PATCH', `/services/${id}`, draft)).service;
 }
 
-// DELETE /services/:id
-export function deleteService(id) {
-  return services.deleteService(id);
+// DELETE /services/:id  (staff only)
+export async function deleteService(id) {
+  await request('DELETE', `/services/${id}`);
+  return {};
 }
 
-// PATCH /services/:id  { isOpen }
-export function setQueueOpen(id, isOpen) {
-  return services.setQueueOpen(id, isOpen);
+// PATCH /services/:id/open  { isOpen }  (staff only)
+export async function setQueueOpen(id, isOpen) {
+  return (await request('PATCH', `/services/${id}/open`, { isOpen })).service;
 }
 
-// Computed by the server in A3 and returned with each service.
-export { estimateWait, formatWait } from '../backend/waitEstimate';
-
-// Office policy shared with the screens.
-export { DEFAULT_CAPACITY, MAX_CAPACITY } from '../backend/officeRules';
+// GET /stats?date=YYYY-MM-DD  (staff only)
+export function getStats(date) {
+  return request('GET', date ? `/stats?date=${date}` : '/stats');
+}
