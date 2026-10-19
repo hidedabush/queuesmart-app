@@ -2,49 +2,61 @@ import { Stack, useRouter } from 'expo-router';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Button from '../../frontend/components/Button';
+import { useServices } from '../../frontend/state/ServicesStore';
 import { colors, radius, spacing, type } from '../../frontend/theme';
 
-const historyEntries = [
-  { id: 'history-1', serviceName: 'Academic Advising', date: 'Sep 28, 2026', outcome: 'Served' },
-  { id: 'history-2', serviceName: 'ID Card Services', date: 'Sep 22, 2026', outcome: 'Served' },
-  { id: 'history-3', serviceName: 'Financial Aid', date: 'Sep 16, 2026', outcome: 'Left queue' },
-];
+const outcomeLabels = {
+  seen: 'Seen',
+  cancelled: 'Cancelled',
+  'no-show': 'No-show',
+  removed: 'Removed by staff',
+};
 
-export default function QueueHistory() {
+function formatDate(isoDate) {
+  const [year, month, day] = isoDate.split('-').map(Number);
+  return new Date(year, month - 1, day).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+}
+
+export default function VisitHistory() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { history } = useServices();
 
   return (
     <View style={styles.screen}>
-      <Stack.Screen options={{ title: 'Queue History', headerShown: false }} />
+      <Stack.Screen options={{ title: 'Visit History', headerShown: false }} />
       <ScrollView
         contentContainerStyle={[styles.content, { paddingTop: insets.top + spacing.md }]}
         showsVerticalScrollIndicator={false}
       >
-        <Text style={type.title}>Queue history</Text>
-        <Text style={styles.subtitle}>Past services you have joined.</Text>
+        <Text style={type.title}>Visit history</Text>
+        <Text style={styles.subtitle}>Your past walk-in check-ins at this office.</Text>
 
-        {historyEntries.length ? (
+        {history.length ? (
           <View style={styles.list}>
-            {historyEntries.map((entry) => (
+            {history.map((entry) => (
               <View key={entry.id} style={styles.row}>
                 <View style={styles.rowTop}>
                   <Text style={styles.serviceName}>{entry.serviceName}</Text>
                   <Text style={[
                     styles.outcome,
-                    entry.outcome === 'Served' && styles.outcomeServed,
+                    entry.outcome === 'seen' && styles.outcomeServed,
                   ]}>
-                    {entry.outcome}
+                    {outcomeLabels[entry.outcome] ?? entry.outcome}
                   </Text>
                 </View>
-                <Text style={styles.date}>{entry.date}</Text>
+                <Text style={styles.date}>{formatDate(entry.date)}</Text>
               </View>
             ))}
           </View>
         ) : (
           <View style={styles.emptyState}>
-            <Text style={styles.emptyTitle}>No past queues yet</Text>
-            <Text style={styles.subtitle}>Queues you leave will appear here.</Text>
+            <Text style={styles.emptyTitle}>No past visits yet</Text>
+            <Text style={styles.subtitle}>Visits you check in for will appear here.</Text>
           </View>
         )}
 

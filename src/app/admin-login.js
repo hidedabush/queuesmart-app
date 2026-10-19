@@ -70,14 +70,14 @@ export default function AdminLoginScreen() {
         <Stack.Screen options={{ title: 'Admin Login', headerShown: false }} />
 
         <View style={styles.header}>
-          <Text style={type.label}>QueueSmart admin</Text>
-          <Text style={styles.title}>Administrator access</Text>
-          <Text style={type.secondary}>Use your organization-issued credentials to manage services and queues.</Text>
+          <Text style={type.label}>QueueSmart staff</Text>
+          <Text style={styles.title}>Front desk sign-in</Text>
+          <Text style={type.secondary}>For office staff only. Sign in to run the walk-in line and manage visit types.</Text>
         </View>
 
         <View style={styles.card}>
           <Field
-            label="Admin email"
+            label="Staff email"
             value={email}
             onChangeText={(value) => {
               setEmail(value);
@@ -87,13 +87,13 @@ export default function AdminLoginScreen() {
             }}
             onSubmitEditing={handleEmailSubmit}
             error={errors.email}
-            placeholder="admin@school.edu"
+            placeholder="frontdesk@clinic.example"
             keyboardType="email-address"
             autoCapitalize="none"
             autoCorrect={false}
             textContentType="emailAddress"
             maxLength={254}
-            helper="Use the email assigned to your administrator account."
+            helper="Use the work email the office assigned to you."
             returnKeyType="next"
             inputRef={emailRef}
             required
@@ -131,15 +131,15 @@ export default function AdminLoginScreen() {
           />
         </View>
 
-        <Button label="Admin login" onPress={handleLogin} />
+        <Button label="Staff sign in" onPress={handleLogin} />
 
         <Pressable
           style={styles.backLink}
           onPress={() => router.back()}
           accessibilityRole="button"
-          accessibilityLabel="Return to user login"
+          accessibilityLabel="Return to patient sign in"
         >
-          <Text style={styles.backText}>← Back to user login</Text>
+          <Text style={styles.backText}>← Back to patient sign in</Text>
         </Pressable>
       </ScrollView>
     </KeyboardAvoidingView>

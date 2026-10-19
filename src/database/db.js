@@ -1,4 +1,4 @@
-import { SEED_QUEUE_ENTRIES, SEED_SERVICES } from './seed';
+import { SEED_QUEUE_ENTRIES, SEED_SERVICES, SEED_VISIT_HISTORY } from './seed';
 
 /**
  * In-memory database for Assignment 2.
@@ -13,6 +13,7 @@ import { SEED_QUEUE_ENTRIES, SEED_SERVICES } from './seed';
 const tables = {
   services: SEED_SERVICES.map((row) => ({ ...row })),
   queueEntries: SEED_QUEUE_ENTRIES.map((row) => ({ ...row })),
+  visitHistory: SEED_VISIT_HISTORY.map((row) => ({ ...row })),
 };
 
 export function all(table) {

@@ -5,7 +5,7 @@ import { useServices } from '../../../frontend/state/ServicesStore';
 import { PriorityMeter, OpenPill } from '../../../frontend/components/Pill';
 import Button from '../../../frontend/components/Button';
 import { contentWidth, useLayout } from '../../../frontend/hooks/useLayout';
-import { colors, layout, radius, spacing, type } from '../../../frontend/theme';
+import { colors, layout, priorityLevels, radius, spacing, type } from '../../../frontend/theme';
 
 const FAB_CLEARANCE = 96;
 
@@ -52,10 +52,10 @@ export default function ServiceList() {
           services.length > 0 ? (
             <View style={styles.header}>
               <Text style={[type.label, { flex: 1 }]}>
-                {services.length} {services.length === 1 ? 'service' : 'services'} · {openCount} open ·{' '}
+                {services.length} {services.length === 1 ? 'visit type' : 'visit types'} · {openCount} open ·{' '}
                 {services.length - openCount} closed
               </Text>
-              {isWide ? <Button label="+ New service" size="sm" onPress={create} /> : null}
+              {isWide ? <Button label="+ New visit type" size="sm" onPress={create} /> : null}
             </View>
           ) : null
         }
@@ -72,19 +72,20 @@ export default function ServiceList() {
         }
         ListEmptyComponent={
           <View style={styles.empty}>
-            <Text style={type.title}>No services yet</Text>
+            <Text style={type.title}>No visit types yet</Text>
             <Text style={[type.secondary, { marginTop: spacing.xs }]}>
-              A service is one thing people can queue for, such as advising or
-              ID cards. Create the first one to get started.
+              A visit type is one kind of walk-in care patients can check in
+              for, such as a sick visit or lab work. Add the first one to get
+              started.
             </Text>
-            <Button label="+ Create a service" onPress={create} style={{ marginTop: spacing.lg }} />
+            <Button label="+ Add a visit type" onPress={create} style={{ marginTop: spacing.lg }} />
           </View>
         }
       />
 
       {showFab ? (
         <Button
-          label="+ New service"
+          label="+ New visit type"
           onPress={create}
           style={[styles.fab, { right: gutter }]}
         />
@@ -100,7 +101,9 @@ function ServiceCard({ service, onPress, style }) {
       accessibilityRole="button"
       accessibilityLabel={`${service.name}, ${service.isOpen ? 'open' : 'closed'}, ${
         service.expectedDuration
-      } minutes per person, ${service.priority} priority`}
+      } minutes per patient, urgency ${priorityLevels[service.priority]?.label ?? service.priority}, up to ${
+        service.capacity
+      } patients a day`}
       accessibilityHint="Edit this service"
       style={({ pressed, hovered }) => [
         styles.card,
@@ -122,7 +125,7 @@ function ServiceCard({ service, onPress, style }) {
 
       <View style={styles.cardBottom}>
         <Text style={styles.durationUnit}>
-          <Text style={styles.durationValue}>{service.expectedDuration}</Text> min / person
+          <Text style={styles.durationValue}>{service.expectedDuration}</Text> min / patient
         </Text>
         <PriorityMeter priority={service.priority} />
         <Text style={styles.chevron}>›</Text>

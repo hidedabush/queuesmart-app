@@ -14,12 +14,32 @@ const passwordRules = [
   { label: '1 special character', test: (value) => /[^A-Za-z0-9]/.test(value) },
 ];
 
+// Accepts MM/DD/YYYY and returns YYYY-MM-DD, or null if it is not a real,
+// plausible date of birth.
+function parseDob(value) {
+  const match = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(value.trim());
+  if (!match) return null;
+  const [, mm, dd, yyyy] = match;
+  const date = new Date(Number(yyyy), Number(mm) - 1, Number(dd));
+  const real =
+    date.getFullYear() === Number(yyyy) &&
+    date.getMonth() === Number(mm) - 1 &&
+    date.getDate() === Number(dd);
+  const age = (Date.now() - date.getTime()) / (365.25 * 24 * 3600 * 1000);
+  if (!real || age < 0 || age > 120) return null;
+  return `${yyyy}-${mm}-${dd}`;
+}
+
 export default function RegisterScreen() {
   const router = useRouter();
-  const { setUserEmail } = useServices();
+  const { setPatient } = useServices();
+  const nameRef = useRef(null);
+  const dobRef = useRef(null);
   const emailRef = useRef(null);
   const passwordRef = useRef(null);
   const confirmPasswordRef = useRef(null);
+  const [name, setName] = useState('');
+  const [dob, setDob] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -34,6 +54,18 @@ export default function RegisterScreen() {
 
   const validate = () => {
     const nextErrors = {};
+
+    if (!name.trim()) {
+      nextErrors.name = 'Enter your full legal name.';
+    } else if (name.trim().split(/\s+/).length < 2) {
+      nextErrors.name = 'Enter your first and last name.';
+    }
+
+    if (!dob.trim()) {
+      nextErrors.dob = 'Date of birth is required.';
+    } else if (!parseDob(dob)) {
+      nextErrors.dob = 'Enter a real date as MM/DD/YYYY.';
+    }
 
     if (!email.trim()) {
       nextErrors.email = 'Email is required.';
@@ -59,7 +91,7 @@ export default function RegisterScreen() {
 
   const handleRegister = () => {
     if (!validate()) return;
-    setUserEmail(email.trim());
+    setPatient({ name: name.trim().replace(/\s+/g, ' '), dob: parseDob(dob), email: email.trim() });
     router.replace('/user/dashboard');
   };
 
@@ -97,12 +129,54 @@ export default function RegisterScreen() {
         <Stack.Screen options={{ title: 'Register', headerShown: false }} />
 
         <View style={styles.header}>
-          <Text style={[type.label, styles.eyebrow]}>Create account</Text>
+          <Text style={[type.label, styles.eyebrow]}>New patient</Text>
           <Text style={styles.title}>Register</Text>
-          <Text style={type.secondary}>Your email will be used as your username for queue access.</Text>
+          <Text style={type.secondary}>
+            The front desk confirms your name and date of birth when you arrive, so
+            enter them exactly as they appear on your photo ID.
+          </Text>
         </View>
 
         <View style={styles.card}>
+          <Field
+            label="Full legal name"
+            value={name}
+            onChangeText={(value) => {
+              setName(value);
+              if (errors.name) {
+                setErrors((current) => ({ ...current, name: undefined }));
+              }
+            }}
+            onSubmitEditing={() => dobRef.current?.focus()}
+            error={errors.name}
+            placeholder="First and last name"
+            autoCapitalize="words"
+            textContentType="name"
+            maxLength={100}
+            returnKeyType="next"
+            inputRef={nameRef}
+            required
+          />
+
+          <Field
+            label="Date of birth"
+            value={dob}
+            onChangeText={(value) => {
+              setDob(value);
+              if (errors.dob) {
+                setErrors((current) => ({ ...current, dob: undefined }));
+              }
+            }}
+            onSubmitEditing={() => emailRef.current?.focus()}
+            error={errors.dob}
+            placeholder="MM/DD/YYYY"
+            keyboardType="numbers-and-punctuation"
+            maxLength={10}
+            returnKeyType="next"
+            inputRef={dobRef}
+            required
+          />
+
           <Field
             label="Email"
             value={email}
@@ -114,13 +188,13 @@ export default function RegisterScreen() {
             }}
             onSubmitEditing={handleEmailSubmit}
             error={errors.email}
-            placeholder="name@school.edu"
+            placeholder="name@example.com"
             keyboardType="email-address"
             autoCapitalize="none"
             autoCorrect={false}
             textContentType="emailAddress"
             maxLength={254}
-            helper="Use your school or office email address."
+            helper="Check-in updates and visit reminders go here."
             returnKeyType="next"
             inputRef={emailRef}
             required
@@ -141,7 +215,7 @@ export default function RegisterScreen() {
             secureTextEntry
             textContentType="newPassword"
             maxLength={128}
-            helper="Use a strong password to protect your queue account."
+            helper="Use a strong password to protect your patient account."
             returnKeyType="next"
             inputRef={passwordRef}
             required

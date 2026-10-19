@@ -20,11 +20,12 @@ import { colors, fonts, layout, radius, spacing, type } from '../../../frontend/
 /**
  * Admin Dashboard (A2 requirement 3.1)
  *
- * Styled like a departure board. What an administrator needs on opening
- * the app, in order:
- *   1. How many people are waiting right now, across everything.
- *   2. Which queue is the problem — one tap to open it.
- *   3. One tap to open or close any queue.
+ * The front desk's board, styled like a departure board. What staff need on
+ * opening the app, in order:
+ *   1. How many patients are waiting right now, across every visit type.
+ *   2. Which line is longest — one tap to open it.
+ *   3. One tap to open or close any visit type to new check-ins. Closing
+ *      keeps the patients already in line.
  */
 export default function AdminDashboard() {
   const router = useRouter();
@@ -149,11 +150,11 @@ function Summary({ summary, heroSize, onOpenBusiest }) {
       <View
         style={styles.statusRow}
         accessible
-        accessibilityLabel={live ? `Live. ${openCount} of ${total} queues open` : 'All queues closed'}
+        accessibilityLabel={live ? `Live. ${openCount} of ${total} visit types open` : 'Walk-ins closed'}
       >
         <LiveDot active={live} />
         <Text style={[type.label, live && { color: colors.text }]}>
-          {live ? 'Live' : 'All queues closed'}
+          {live ? 'Live' : 'Walk-ins closed'}
         </Text>
         {live ? (
           <Text style={type.label}>
@@ -168,8 +169,8 @@ function Summary({ summary, heroSize, onOpenBusiest }) {
         accessible
         role="heading"
         aria-level={2}
-        accessibilityLabel={`${waiting} people waiting right now across ${openCount} open ${
-          openCount === 1 ? 'queue' : 'queues'
+        accessibilityLabel={`${waiting} patients waiting right now across ${openCount} open ${
+          openCount === 1 ? 'visit type' : 'visit types'
         }`}
       >
         <Text
@@ -179,7 +180,7 @@ function Summary({ summary, heroSize, onOpenBusiest }) {
           {String(waiting).padStart(2, '0')}
         </Text>
         <Text style={styles.heroCaption} maxFontSizeMultiplier={1.4}>
-          People{'\n'}waiting{'\n'}
+          Patients{'\n'}waiting{'\n'}
           <Text style={{ color: colors.accentText }}>now</Text>
         </Text>
       </View>
@@ -190,15 +191,15 @@ function Summary({ summary, heroSize, onOpenBusiest }) {
         <Pressable
           onPress={() => onOpenBusiest(busiest.id)}
           accessibilityRole="button"
-          accessibilityLabel={`Busiest queue: ${busiest.name}, ${busiest.waiting} waiting`}
-          accessibilityHint="Opens queue management"
+          accessibilityLabel={`Longest line: ${busiest.name}, ${busiest.waiting} waiting`}
+          accessibilityHint="Opens the waiting line"
           style={({ pressed, hovered }) => [
             styles.alert,
             (hovered || pressed) && { backgroundColor: colors.accentSoftStrong },
           ]}
         >
           <View style={{ flex: 1 }}>
-            <Text style={[type.label, { color: colors.accentText }]}>Busiest</Text>
+            <Text style={[type.label, { color: colors.accentText }]}>Longest line</Text>
             <Text style={styles.alertName} numberOfLines={2}>
               {busiest.name}
             </Text>
@@ -235,7 +236,7 @@ function ListHeader({ total }) {
   return (
     <View style={styles.listHeader}>
       <Text style={[type.label, styles.listTitle]} role="heading" aria-level={2}>
-        Queues · {String(total).padStart(2, '0')}
+        Visit types · {String(total).padStart(2, '0')}
       </Text>
       <Text style={[type.label, styles.colWaiting]} aria-hidden>Waiting</Text>
       <Text style={[type.label, styles.colOpen]} aria-hidden>Open</Text>
@@ -247,11 +248,11 @@ function EmptyBoard({ onCreate }) {
   return (
     <View style={styles.empty}>
       <Text style={type.label}>Board empty</Text>
-      <Text style={[type.title, { marginTop: spacing.sm }]}>No services yet</Text>
+      <Text style={[type.title, { marginTop: spacing.sm }]}>No visit types yet</Text>
       <Text style={[type.secondary, { marginTop: spacing.xs }]}>
-        Create a service and it will appear here with its live queue.
+        Add a visit type and it will appear here with its live line.
       </Text>
-      <Button label="+ Create a service" onPress={onCreate} style={{ marginTop: spacing.lg }} />
+      <Button label="+ Add a visit type" onPress={onCreate} style={{ marginTop: spacing.lg }} />
     </View>
   );
 }

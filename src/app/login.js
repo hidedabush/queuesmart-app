@@ -75,7 +75,7 @@ export default function LoginScreen() {
         <View style={styles.header}>
           <Text style={type.label}>QueueSmart</Text>
           <Text style={styles.title}>Welcome back</Text>
-          <Text style={type.secondary}>Sign in to check your place in line and stay updated.</Text>
+          <Text style={type.secondary}>Sign in to check in for a same-day visit and follow your place in line.</Text>
         </View>
 
         <View style={styles.card}>
@@ -90,13 +90,13 @@ export default function LoginScreen() {
             }}
             onSubmitEditing={handleEmailSubmit}
             error={errors.email}
-            placeholder="name@school.edu"
+            placeholder="name@example.com"
             keyboardType="email-address"
             autoCapitalize="none"
             autoCorrect={false}
             textContentType="emailAddress"
             maxLength={254}
-            helper="Use the email address linked to your queue account."
+            helper="Use the email you registered with."
             returnKeyType="next"
             inputRef={emailRef}
             required
@@ -147,13 +147,13 @@ export default function LoginScreen() {
           style={styles.adminCard}
           onPress={() => router.push('/admin-login')}
           accessibilityRole="button"
-          accessibilityLabel="Open administrator login"
+          accessibilityLabel="Open office staff sign in"
         >
           <View style={styles.adminIconWrap} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
             <View style={styles.lockShackle} />
             <View style={styles.lockBody} />
           </View>
-          <Text style={styles.adminText}>Administrator login</Text>
+          <Text style={styles.adminText}>Office staff sign in</Text>
           <Text style={styles.adminArrow}>→</Text>
         </Pressable>
       </ScrollView>

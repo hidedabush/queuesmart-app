@@ -39,14 +39,14 @@ export default function AdminTabs() {
       <Tabs.Screen
         name="dashboard"
         options={{
-          title: 'Dashboard',
+          title: 'Front desk',
           tabBarIcon: ({ color }) => <DashboardIcon color={color} />,
         }}
       />
       <Tabs.Screen
         name="services"
         options={{
-          title: 'Services',
+          title: 'Visit types',
           tabBarIcon: ({ color }) => <ServicesIcon color={color} />,
         }}
       />

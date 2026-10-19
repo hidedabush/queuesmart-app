@@ -1,14 +1,18 @@
 /**
  * Queue Management screen (A2 requirement 3.3)
  *
- * by kevin :3 (idk if u wanted me to keep the layout of the placeholder but i tried) 
+ * by kevin :3 (idk if u wanted me to keep the layout of the placeholder but i tried)
  *
- * ui only, the queue lives in this screen's state, seeded from the service's
- * waiting count. implemented and modified the reorder, remove and "serve next" as a shared state along with its respective needed functions in ServicesStore.js, frontend/state
+ * The front desk's view of one visit type's line. Staff call the next
+ * patient, then mark them checked in when they reach the desk or a no-show
+ * after the grace period. Only one patient can be called at a time. Staff
+ * can also move a patient up or down, or take them out of line. The line
+ * itself lives in the shared state (ServicesStore.js), so a patient who
+ * checks in from the app appears here and moves up as staff work the line.
  */
 import { Stack, useLocalSearchParams } from 'expo-router';
-import { useState } from 'react';
 import { FlatList, StyleSheet, Text, View } from 'react-native';
+import { NO_SHOW_GRACE_MINUTES, displayName } from '../../../api/queue';
 import Button from '../../../frontend/components/Button';
 import Pill from '../../../frontend/components/Pill';
 import { ToastProvider, useToast } from '../../../frontend/components/Toast';
@@ -26,54 +30,58 @@ export default function QueueManagement() {
   );
 }
 
+function formatDob(dob) {
+  if (!dob) return null;
+  const [year, month, day] = dob.split('-');
+  return `${month}/${day}/${year}`;
+}
+
 function QueueScreen() {
   const { serviceId } = useLocalSearchParams();
-  const { getService, getServiceQueue, updateServiceQueue } = useServices();
+  const { getService, getServiceQueue, getCalled, callNext, resolveCalled, moveEntry, removeEntry } =
+    useServices();
   const { gutter } = useLayout();
   const toast = useToast();
   const service = getService(serviceId);
   const queue = service ? getServiceQueue(serviceId) : [];
-
-  const [serving, setServing] = useState(null);
+  const called = service ? getCalled(serviceId) : null;
 
   if (!service) {
     return (
       <View style={[styles.screen, contentWidth(layout.readable, gutter), styles.padded]}>
-        <Text style={type.title}>Service not found</Text>
+        <Text style={type.title}>Visit type not found</Text>
         <Text style={[type.secondary, { marginTop: spacing.xs }]}>
-          Go back to the dashboard and pick a queue.
+          Go back to the front desk and pick a line.
         </Text>
       </View>
     );
   }
 
-  function serveNext() {
-    if (queue.length === 0) return;
-    const [served, ...nextQueue] = queue;
-    setServing(served);
-    updateServiceQueue(serviceId, nextQueue);
+  function handleCallNext() {
+    const { entry } = callNext(serviceId);
+    if (entry) toast(`Calling ${displayName(entry.patientName)} to the front desk.`);
+  }
+
+  function handleResolve(outcome) {
+    const entry = resolveCalled(serviceId, outcome);
+    if (!entry) return;
     toast(
-      nextQueue.length > 0
-        ? `Now serving ${served.name}. ${nextQueue[0].name} is almost ready.`
-        : `Now serving ${served.name}. The queue is now empty.`
+      outcome === 'seen'
+        ? `${displayName(entry.patientName)} checked in.`
+        : `${displayName(entry.patientName)} marked as a no-show. Their spot is released.`
     );
   }
 
   function move(index, direction) {
-    const target = index + direction;
-    if (target < 0 || target >= queue.length) return;
-    const next = [...queue];
-    [next[index], next[target]] = [next[target], next[index]];
-    updateServiceQueue(serviceId, next);
-    toast(`${queue[index].name} moved to position ${target + 1}.`);
+    const entry = queue[index];
+    moveEntry(serviceId, entry.id, direction);
+    toast(`${displayName(entry.patientName)} moved to position ${index + 1 + direction}.`);
   }
 
   function remove(index) {
-    toast(`${queue[index].name} was removed from the queue.`);
-    updateServiceQueue(
-      serviceId,
-      queue.filter((_, i) => i !== index)
-    );
+    const entry = queue[index];
+    removeEntry(entry.id);
+    toast(`${displayName(entry.patientName)} was taken out of line.`);
   }
 
   return (
@@ -85,43 +93,78 @@ function QueueScreen() {
       ListHeaderComponent={
         <View>
           <Stack.Screen options={{ title: service.name }} />
-          <Text style={type.label}>{service.name}</Text>
+          <Text style={type.label}>
+            {service.name} · {service.isOpen ? 'Open for check-in' : 'Closed to new check-ins'}
+          </Text>
           <Text style={[type.display, { marginTop: spacing.xs }]}>{queue.length} waiting</Text>
 
-          {serving ? (
-            <View style={styles.serving} accessible accessibilityLabel={`Now serving ${serving.name}`}>
-              <Text style={[type.label, { color: colors.accentText }]}>Now serving</Text>
-              <Text style={styles.servingName}>{serving.name}</Text>
+          {called ? (
+            <View
+              style={styles.serving}
+              accessible
+              accessibilityLabel={`Now calling ${displayName(called.patientName)}`}
+            >
+              <Text style={[type.label, { color: colors.accentText }]}>Now calling</Text>
+              <Text style={styles.servingName}>{displayName(called.patientName)}</Text>
+              <Text style={[type.secondary, { marginTop: 2 }]}>{called.reason}</Text>
+              <Text style={[type.secondary, { marginTop: spacing.sm }]}>
+                Confirm name and date of birth ({formatDob(called.dob)}) at the desk. If they have
+                not arrived after {NO_SHOW_GRACE_MINUTES} minutes, mark a no-show.
+              </Text>
+              <View style={styles.actions}>
+                <Button
+                  label="Checked in"
+                  size="sm"
+                  onPress={() => handleResolve('seen')}
+                  accessibilityHint="The patient is at the desk and is sent to a room"
+                />
+                <Button
+                  label="No-show"
+                  variant="danger"
+                  size="sm"
+                  onPress={() => handleResolve('no-show')}
+                  accessibilityHint="Releases the spot of a patient who did not arrive"
+                />
+              </View>
             </View>
           ) : null}
 
           <Button
-            label="Serve next"
-            onPress={serveNext}
-            disabled={queue.length === 0}
-            accessibilityHint="Calls the first person in the queue"
-            style={{ marginTop: spacing.lg, marginBottom: spacing.xl }}
+            label="Call next patient"
+            onPress={handleCallNext}
+            disabled={queue.length === 0 || Boolean(called)}
+            accessibilityHint={
+              called
+                ? 'Check in or mark a no-show for the patient being called first'
+                : 'Calls the first patient in line to the front desk'
+            }
+            style={{ marginTop: spacing.lg, marginBottom: called ? spacing.xs : spacing.xl }}
           />
+          {called ? (
+            <Text style={[type.secondary, { marginBottom: spacing.xl }]}>
+              Finish with the patient being called before calling the next one.
+            </Text>
+          ) : null}
 
           <View style={styles.listHeader}>
             <Text style={type.label} role="heading" aria-level={2}>
-              Queue · {String(queue.length).padStart(2, '0')}
+              Line · {String(queue.length).padStart(2, '0')}
             </Text>
           </View>
         </View>
       }
       ListEmptyComponent={
         <View style={styles.empty}>
-          <Text style={type.label}>Queue empty</Text>
+          <Text style={type.label}>Line empty</Text>
           <Text style={[type.title, { marginTop: spacing.sm }]}>Nobody is waiting</Text>
           <Text style={[type.secondary, { marginTop: spacing.xs }]}>
-            People who join {service.name} will appear here.
+            Patients who check in for {service.name} will appear here.
           </Text>
         </View>
       }
       renderItem={({ item, index }) => (
         <Entry
-          user={item}
+          entry={item}
           position={index + 1}
           isFirst={index === 0}
           isLast={index === queue.length - 1}
@@ -134,19 +177,25 @@ function QueueScreen() {
   );
 }
 
-function Entry({ user, position, isFirst, isLast, onUp, onDown, onRemove }) {
+function Entry({ entry, position, isFirst, isLast, onUp, onDown, onRemove }) {
+  const name = displayName(entry.patientName);
   // Status follows position, so it can never go stale after a reorder.
-  const almostReady = position === 1;
+  const upNext = position === 1;
 
   return (
     <View style={styles.row}>
       <View style={styles.rowTop}>
         <Text style={styles.position}>{String(position).padStart(2, '0')}</Text>
-        <Text style={styles.name} numberOfLines={1}>
-          {user.name}
-        </Text>
-        {almostReady ? (
-          <Pill label="Almost ready" fg={colors.accentText} border={colors.accent} bg={colors.accentSoft} />
+        <View style={styles.who}>
+          <Text style={styles.name} numberOfLines={1}>
+            {name}
+          </Text>
+          <Text style={styles.reason} numberOfLines={2}>
+            {entry.reason}
+          </Text>
+        </View>
+        {upNext ? (
+          <Pill label="Up next" fg={colors.accentText} border={colors.accent} bg={colors.accentSoft} />
         ) : (
           <Pill label="Waiting" />
         )}
@@ -159,7 +208,7 @@ function Entry({ user, position, isFirst, isLast, onUp, onDown, onRemove }) {
           size="sm"
           disabled={isFirst}
           onPress={onUp}
-          accessibilityHint={`Moves ${user.name} up one place`}
+          accessibilityHint={`Moves ${name} up one place`}
         />
         <Button
           label="Down"
@@ -167,14 +216,14 @@ function Entry({ user, position, isFirst, isLast, onUp, onDown, onRemove }) {
           size="sm"
           disabled={isLast}
           onPress={onDown}
-          accessibilityHint={`Moves ${user.name} down one place`}
+          accessibilityHint={`Moves ${name} down one place`}
         />
         <Button
           label="Remove"
           variant="danger"
           size="sm"
           onPress={onRemove}
-          accessibilityHint={`Removes ${user.name} from the queue`}
+          accessibilityHint={`Takes ${name} out of line`}
         />
       </View>
     </View>
@@ -210,7 +259,9 @@ const styles = StyleSheet.create({
   },
   rowTop: { flexDirection: 'row', alignItems: 'center', columnGap: spacing.md },
   position: { ...type.metric, fontSize: 28, minWidth: 40 },
-  name: { ...type.body, fontWeight: '700', flex: 1 },
+  who: { flex: 1 },
+  name: { ...type.body, fontWeight: '700' },
+  reason: { ...type.secondary, marginTop: 2 },
   actions: {
     flexDirection: 'row',
     flexWrap: 'wrap',

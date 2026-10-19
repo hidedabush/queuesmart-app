@@ -35,25 +35,25 @@ export default function RootLayout() {
               }}
             >
             <Stack.Screen name="index" options={{ headerShown: false }} />
-            <Stack.Screen name="admin-login" options={{ title: 'Admin Login', headerShown: false }} />
+            <Stack.Screen name="admin-login" options={{ title: 'Staff Login', headerShown: false }} />
             {/* The tab navigator draws its own headers. The title follows the
                 active tab so back buttons say where they lead. */}
             <Stack.Screen
               name="admin/(tabs)"
               options={({ route }) => ({
                 headerShown: false,
-                title: getFocusedRouteNameFromRoute(route) === 'services' ? 'Services' : 'Dashboard',
+                title: getFocusedRouteNameFromRoute(route) === 'services' ? 'Visit types' : 'Front desk',
               })}
             />
             <Stack.Screen
               name="admin/services/[id]"
               options={({ route }) => ({
-                title: route.params?.id === 'new' ? 'New service' : 'Edit service',
+                title: route.params?.id === 'new' ? 'New visit type' : 'Edit visit type',
               })}
             />
-            <Stack.Screen name="admin/queue/[serviceId]" options={{ title: 'Queue' }} />
-            <Stack.Screen name="user/join-queue" options={{ title: 'Join Queue' }} />
-            <Stack.Screen name="user/queue-status" options={{ title: 'Queue Status' }} />
+            <Stack.Screen name="admin/queue/[serviceId]" options={{ title: 'Waiting line' }} />
+            <Stack.Screen name="user/join-queue" options={{ title: 'Check in' }} />
+            <Stack.Screen name="user/queue-status" options={{ title: 'My check-in' }} />
             </Stack>
           </ToastProvider>
         </ServicesProvider>

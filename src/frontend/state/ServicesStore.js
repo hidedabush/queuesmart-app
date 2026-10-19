@@ -5,130 +5,93 @@ import * as servicesApi from '../../api/services';
 /**
  * Shared front-end state for Assignment 2.
  *
- * The screens need to share state: a service created on the Service
- * Management screen must appear on the Admin Dashboard, and a user joining a
- * queue must show up in that queue's waiting count. This context holds what
- * the API last returned and re-reads it after every change.
+ * The screens need to share state: a visit type created by staff must
+ * appear on the dashboard, and a patient who checks in must appear in the
+ * front desk's line (and move up when staff call the next patient). This
+ * context holds what the API last returned and re-reads it after every
+ * change.
  *
  * Screens never import src/api/ for data themselves; they use the hooks
  * below, so every screen re-renders from the same copy.
  */
 const ServicesContext = createContext(null);
 
-// temporary mock-data for front-end prototype, i used our names heh
-// eventually, replace this with real database-backed queue entries once the backend is connected
-const teamRoster = ['Kevin', 'Jennifer', 'Nguyen', 'Bella'];
-
-function makeQueue(service) {
-  const count = Math.max(0, Number(service?.waiting ?? 0));
-  return Array.from({ length: count }, (_, index) => {
-    const name = teamRoster[index % teamRoster.length];
-    const repeat = Math.floor(index / teamRoster.length) + 1;
-
-    return {
-      id: `${service.id}-q-${index + 1}`,
-      name: teamRoster.length > 1 && repeat > 1 ? `${name} ${repeat}` : name,
-    };
+function readAll() {
+  const services = servicesApi.listServices();
+  const lines = {};
+  const called = {};
+  services.forEach((service) => {
+    lines[service.id] = queueApi.listQueue(service.id);
+    called[service.id] = queueApi.getCalled(service.id);
   });
+  return {
+    services,
+    lines,
+    called,
+    activeQueue: queueApi.getActiveQueue(),
+    history: queueApi.listVisitHistory(),
+  };
 }
 
-function hydrateQueueState(list, previousMap = new Map()) {
-  return list.map((service) => {
-    const previous = previousMap.get(service.id) ?? [];
-    return {
-      ...service,
-      queue: previous.length > 0 ? previous : makeQueue(service),
-      waiting: previous.length > 0 ? previous.length : service.waiting,
-    };
-  });
+const emptyPatient = { name: '', dob: '', email: '' };
+
+// Accounts that only signed in (no registration this session) have no name
+// on file yet, so fall back to the part of the email before the @.
+function patientForCheckIn(patient) {
+  if (patient.name) return patient;
+  const handle = patient.email.split('@')[0] || 'Patient';
+  return { ...patient, name: handle.charAt(0).toUpperCase() + handle.slice(1) };
 }
 
 export function ServicesProvider({ children }) {
-  const [services, setServices] = useState(() => hydrateQueueState(servicesApi.listServices()));
-  const [activeQueue, setActiveQueue] = useState(() => queueApi.getActiveQueue());
-  const [userEmail, setUserEmail] = useState('');
+  const [data, setData] = useState(readAll);
+  const [patient, setPatientState] = useState(emptyPatient);
 
   const value = useMemo(() => {
     function refresh() {
-      const previousMap = new Map((services || []).map((service) => [service.id, service.queue ?? []]));
-      setServices(hydrateQueueState(servicesApi.listServices(), previousMap));
-      setActiveQueue(queueApi.getActiveQueue());
+      setData(readAll());
     }
 
-    function getService(id) {
-      return services.find((s) => s.id === id) || null;
-    }
-
-    function getServiceQueue(id) {
-      return getService(id)?.queue ?? [];
-    }
-
-    function updateServiceQueue(id, nextQueue) {
-      setServices((current) =>
-        current.map((service) => {
-          if (service.id !== id) return service;
-          const queue = Array.isArray(nextQueue) ? nextQueue : [];
-          return {
-            ...service,
-            queue,
-            waiting: queue.length,
-          };
-        })
-      );
-    }
-
-    function createService(draft) {
-      const service = servicesApi.createService(draft);
-      refresh();
-      return service;
-    }
-
-    function updateService(id, draft) {
-      servicesApi.updateService(id, draft);
-      refresh();
-    }
-
-    function deleteService(id) {
-      servicesApi.deleteService(id);
-      refresh();
-    }
-
-    function setQueueOpen(id, isOpen) {
-      servicesApi.setQueueOpen(id, isOpen);
-      refresh();
-    }
-
-    function updateUserEmail(email) {
-      setUserEmail(email);
-    }
-
-    function joinQueue(serviceId) {
-      const entry = queueApi.joinQueue(serviceId);
-      refresh();
-      return entry;
-    }
-
-    function leaveQueue() {
-      queueApi.leaveQueue();
-      refresh();
+    // Wraps an API call so every change re-reads the shared state.
+    function change(call) {
+      return (...args) => {
+        const result = call(...args);
+        refresh();
+        return result;
+      };
     }
 
     return {
-      services,
-      getService,
-      getServiceQueue,
-      updateServiceQueue,
-      createService,
-      updateService,
-      deleteService,
-      setQueueOpen,
-      activeQueue,
-      joinQueue,
-      leaveQueue,
-      userEmail,
-      setUserEmail: updateUserEmail,
+      services: data.services,
+      getService: (id) => data.services.find((s) => s.id === id) || null,
+      getServiceQueue: (id) => data.lines[id] ?? [],
+      getCalled: (id) => data.called[id] ?? null,
+
+      createService: change(servicesApi.createService),
+      updateService: change(servicesApi.updateService),
+      deleteService: change(servicesApi.deleteService),
+      setQueueOpen: change(servicesApi.setQueueOpen),
+
+      // Front desk
+      callNext: change(queueApi.callNext),
+      resolveCalled: change(queueApi.resolveCalled),
+      moveEntry: change(queueApi.moveEntry),
+      removeEntry: change(queueApi.removeEntry),
+
+      // Patient
+      activeQueue: data.activeQueue,
+      history: data.history,
+      checkIn: change((serviceId, reason) =>
+        queueApi.checkIn(serviceId, patientForCheckIn(patient), reason)
+      ),
+      cancelCheckIn: change(queueApi.cancelCheckIn),
+
+      patient,
+      setPatient: (next) => setPatientState({ ...emptyPatient, ...next }),
+      userEmail: patient.email,
+      setUserEmail: (email) => setPatientState((current) => ({ ...current, email })),
     };
-  }, [services, activeQueue, userEmail]);
+  }, [data, patient]);
 
   return (
     <ServicesContext.Provider value={value}>{children}</ServicesContext.Provider>
@@ -143,8 +106,8 @@ export function useServices() {
   return context;
 }
 
-// The signed-in user's place in a queue, and the actions that change it.
+// The signed-in patient's check-in, and the actions that change it.
 export function useQueue() {
-  const { activeQueue, joinQueue, leaveQueue } = useServices();
-  return { activeQueue, joinQueue, leaveQueue };
+  const { activeQueue, checkIn, cancelCheckIn } = useServices();
+  return { activeQueue, checkIn, cancelCheckIn };
 }
