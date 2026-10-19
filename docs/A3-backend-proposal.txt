@@ -1,0 +1,643 @@
+===============================================================================
+ QUEUESMART - ASSIGNMENT 3 BACKEND PROPOSAL
+ Architecture, module design and front-end integration
+===============================================================================
+
+ Companion documents:
+   docs/A3-api-spec.txt       every endpoint, field rule and error code
+   docs/A3-testing-plan.txt   unit/integration tests and coverage
+
+ Contents
+   0. Summary
+   1. Where we are today (A2) and what A3 adds
+   2. How each A1 diagram box maps to A3
+   3. Diagrams
+        A. Context diagram (A1 #1)
+        B. Container diagram (A1 #2, with A3 detail)
+        C. Code layout inside the backend
+        D. Data model
+        E. Request flow (one join-queue call, end to end)
+   4. Module designs
+        4.1 Authentication
+        4.2 Service management
+        4.3 Queue management
+        4.4 Wait-time estimation
+        4.5 Notifications
+        4.6 History (and admin statistics)
+   5. Validation and error contract
+   6. Front-end integration
+   7. Team split and merge order
+   8. Requirement checklist
+   9. Out of scope for A3
+
+
+-------------------------------------------------------------------------------
+ 0. SUMMARY
+-------------------------------------------------------------------------------
+
+ We build the backend as a standalone Node + Express server in a new
+ server/ folder. It exposes the REST API the A2 code already outlines in the
+ route comments in src/api/*.js. The Expo app stops calling business logic
+ directly and sends HTTP requests to the server.
+
+ The design follows the two A1 diagrams box for box:
+
+   Mobile Application  -->  QueueSmart Backend  -->  Database [SQL]
+                            (Back-end/API +           (A3: in-memory stand-in)
+                             Notification component)
+                                     |
+                                     +-->  SMS [external]  (A3: mock gateway)
+
+ There is no real database or real SMS in A3. Both sit behind interfaces
+ (repositories and SmsGateway), so in A4 we rewrite only those files and
+ leave the API, the business rules and the screens alone.
+
+
+-------------------------------------------------------------------------------
+ 1. WHERE WE ARE TODAY (A2) AND WHAT A3 ADDS
+-------------------------------------------------------------------------------
+
+ In A2 the "backend" (src/backend/*, src/database/*) runs inside the Expo app.
+ src/api/*.js calls it as ordinary functions, and all data resets when the
+ app reloads.
+
+ Gaps against the A3 brief:
+
+   A3 requirement              Today (A2)                       Gap
+   --------------------------  -------------------------------  ----------------------------
+   Auth: register, login,      Screens check form input only    No users, passwords, tokens
+   roles                                                        or role checks
+   Service CRUD + validation   createService() stores whatever  No server-side required /
+                               it is given                      type / length checks
+   Queue join/leave,           queueService.js (works)          Ordering ignores priority;
+   serve next                                                   "me" is an isCurrentUser flag
+   Wait-time estimate          waitEstimate.js (works)          None - moved over as-is
+   Notifications               Built on the phone in            Must be decided and stored by
+                               user/dashboard.js                the backend
+   History                     One shared visitHistory list     Not tied to a user
+   Unit tests                  None                             No test framework at all
+   Front end calls APIs        Direct function calls            Needs HTTP client + async state
+
+ What we keep. These are already correct and move to the server unchanged:
+   - officeRules.js   checkInBlocker, validateReason, displayName,
+                      patientStatus, HEAD_IN_AHEAD, capacity limits
+   - waitEstimate.js  waitRange, estimateWait
+   - queueService.js  call-next / resolve / move / remove rules
+   - db.js            all / find / insert / update / remove
+
+
+-------------------------------------------------------------------------------
+ 2. HOW EACH A1 DIAGRAM BOX MAPS TO A3
+-------------------------------------------------------------------------------
+
+   A1 element                       A3 implementation                      Location
+   -------------------------------  -------------------------------------  ---------------------------
+   User                             Patient account, role 'user'           src/app/user/*
+     joins/leaves a queue, views
+     position and approx wait
+   Admin / Administrator            Staff account, role 'admin'            src/app/admin/*
+     creates services, manages
+     queue, views statistics
+   Mobile Application [iOS/Android] The existing Expo app; its API layer   src/app, src/frontend,
+                                    now makes HTTP requests                src/api
+   QueueSmart Backend (dashed box)  Standalone Node + Express process      server/
+     Back-end / API [Application]   Routes, middleware, controllers,       server/src/api/
+       authentication, queue        business services
+       ordering, wait-time approx
+     Notification component         One entry point:                       server/src/notifications/
+       decide who to alert / when   notifications.trigger(event)
+   Database [SQL]                   A3: in-memory tables with the same     server/src/database/
+     users, services, queue         four names, reached only through
+     entries, history               repositories. A4: real SQL
+   SMS [external]                   A3: MockSmsGateway (console log +      server/src/notifications/
+     delivers messages/             outbox). A4: real provider behind      smsGateway.js
+     verifications                  the same interface
+
+   Arrows
+   -------------------------------  -------------------------------------
+   "Send requests to"               src/api/client.js  -> HTTP/JSON -> server
+   "Writes / Reads"                 API services -> repositories only
+   "Alerts triggers"                API -> notifications.trigger({ type, ... })
+   "send message off to"            Notification component -> smsGateway.send(to, text)
+   "Sends notifications to" (User)  GET /notifications/me -> dashboard bell
+
+
+-------------------------------------------------------------------------------
+ 3. DIAGRAMS
+-------------------------------------------------------------------------------
+
+ A. CONTEXT DIAGRAM  (same shape as A1 #1)
+
+ +--------------+  joins/leaves a queue,     +------------------+  create services,   +--------------+
+ |     User     |  views position and       |    QueueSmart    |  manage queue,      |    Admin     |
+ |  (patient)   |  approx wait time         |  remote queues + |  view statistics    | (front desk) |
+ |              | ------------------------> | staff management | <------------------ |              |
+ +--------------+                           +------------------+                     +--------------+
+        ^                                            |
+        |                                            | notify when the service is ready
+        |                                            v
+        |      sends notifications to       +------------------+
+        +---------------------------------- |  SMS (external)  |   A3: MockSmsGateway
+                                            +------------------+       + in-app outbox
+
+
+ B. CONTAINER DIAGRAM  (same shape as A1 #2, with A3 detail)
+
+            +--------+                              +---------------+
+            |  User  |                              | Administrator |
+            +--------+                              +---------------+
+                |  join queue,                              |  manage services
+                |  check position                           |  and queue, stats
+                +---------------------+   +-----------------+
+                                      v   v
+                          +---------------------------+
+                          |   Mobile Application      |  Expo (iOS / Android / web)
+                          |   [iOS/Android]           |  src/api/client.js:
+                          |                           |  fetch + Bearer token
+                          +---------------------------+
+                                        |
+                                        | Send requests to  (HTTP/JSON, port 4000)
+  + - - - - - - - - - - - - - - - - - - | - - - - - - - - QueueSmart Backend (server/) - - - - +
+                                        v
+  |                       +---------------------------+  Alerts triggers  +-------------------+ |
+                          |  Back-end / API           | ----------------> |  Notification     |
+  |  +---------------+    |  [Application]            |                   |  component        | |
+     | Database      |    |                           |                   |                   |
+  |  | [SQL]         |<---|  auth, services, queue    |                   |  decides who and  | |
+     |               |    |  ordering, wait estimate, |                   |  when: joined,    |
+  |  | A3: in-memory | W/R|  history, stats           |                   |  almost-up,       | |
+     | users         |    |                           |                   |  called           |
+  |  | services      |    |  middleware: requireAuth, |                   |  dedupe + outbox  | |
+     | queueEntries  |    |  requireRole, validate,   |                   +-------------------+
+  |  | history       |    |  errorHandler             |                             |           |
+     +---------------+    +---------------------------+                             |
+  + - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - | - - - - - +
+                                                                                    |
+                                                              send message off to   |
+                                                                                    v
+                                                                   +-------------------------+
+                                                                   |  SMS [external]         |
+                                                                   |  A3: MockSmsGateway     |
+                                                                   |  (console log + outbox) |
+                                                                   +-------------------------+
+
+ Rules that keep the boxes honest:
+   - Only the Back-end/API box reads or writes the Database.
+   - The Notification component receives events and decides who to alert and
+     when. It never writes to the Database. Its outbox is its own in-memory
+     store.
+   - Only the Notification component talks to the SMS gateway.
+   - The Mobile Application talks to the backend only through src/api/client.js.
+
+
+ C. CODE LAYOUT INSIDE THE BACKEND
+
+   server/
+     package.json             deps: express, cors
+                              dev:  vitest, @vitest/coverage-v8, supertest
+     vitest.config.js         coverage thresholds (75%)
+     src/
+       index.js               starts the listener on port 4000
+       app.js                 builds the Express app and exports it
+                              (supertest imports it without opening a port)
+
+       api/                   ===== "Back-end / API [Application]" box =====
+         middleware/
+           auth.js            requireAuth, requireRole('admin')
+           validate.js        validate(schema) -> 400 with per-field messages
+           errors.js          AppError class + errorHandler (one error shape)
+         validation/
+           rules.js           required, isString, isInteger, minLength,
+                              maxLength, oneOf, intRange, isEmail, isDob,
+                              isPhone, isStrongPassword
+           schemas.js         register, login, serviceCreate, serviceUpdate,
+                              serviceOpen, joinQueue, resolveCalled,
+                              updateEntry
+         routes/              auth, services, queue, history,
+                              notifications, stats
+         controllers/         thin: read req -> call a service -> send JSON
+         services/
+           authService.js     register, login, hashPassword, verifyPassword,
+                              signToken, verifyToken
+           servicesService.js list, get, create, update, setOpen, remove
+           queueService.js    join, leave, getMine, listLine, callNext,
+                              resolveCalled, moveEntry, setPriority,
+                              removeEntry
+           waitEstimate.js    moved unchanged from src/backend
+           officeRules.js     moved unchanged from src/backend
+           historyService.js  record, listForUser
+           statsService.js    perServiceToday
+
+       notifications/         ===== "Notification component" box =====
+         index.js             trigger(event): decide who/when -> outbox + SMS
+         messages.js          message text (never includes the visit reason)
+         outbox.js            in-memory store the API reads for the bell
+         smsGateway.js        SmsGateway interface + MockSmsGateway
+                              ===== "SMS [external]" stand-in =====
+
+       database/              ===== "Database [SQL]" box (A3 stand-in) =====
+         db.js                all, find, insert, update, remove, reset
+         seed.js              admin, demo patient, 5 visit types,
+                              15 waiting patients, past history
+         repositories/
+           usersRepo.js       findById, findByEmail, insert
+           servicesRepo.js    list, findById, findByName, insert, update,
+                              remove
+           queueRepo.js       listWaiting(serviceId), findCalled(serviceId),
+                              findActiveByUser(userId), insert, update,
+                              remove, nextOrder
+           historyRepo.js     insert, listByUser(userId), listForDate(date)
+                              -> In A4 only these four files are rewritten
+                                 as SQL queries.
+
+     tests/
+       unit/                  one file per rule set / service
+       integration/           one file per route group (supertest)
+
+
+ D. DATA MODEL  (exactly the four tables in the A1 Database box)
+
+   +----------------------+              +------------------------------+
+   | users                |              | services                     |
+   +----------------------+              +------------------------------+
+   | id            PK     |              | id               PK          |
+   | name                 |              | name             UNIQUE      |
+   | dob    (YYYY-MM-DD)  |              | description                  |
+   | email         UNIQUE |              | expectedDuration (minutes)   |
+   | phone    (nullable)  |              | priority  low|medium|high    |
+   | passwordHash         |              | capacity  (daily walk-ins)   |
+   | salt                 |              | isOpen                       |
+   | role    user|admin   |              +------------------------------+
+   | createdAt            |                          | 1
+   +----------------------+                          |
+              | 1                                    |
+              |                                      |
+              | *                                    | *
+   +-----------------------------------------------------------------+
+   | queueEntries                                                    |
+   +-----------------------------------------------------------------+
+   | id PK | userId FK | serviceId FK | reason | status waiting|called|
+   | priority normal|urgent | order | arrivedAt | calledAt            |
+   +-----------------------------------------------------------------+
+              |
+              | when an entry leaves a line, one row is written to:
+              v
+   +-----------------------------------------------------------------+
+   | history                                                         |
+   +-----------------------------------------------------------------+
+   | id PK | userId FK | serviceId | serviceName | date              |
+   | joinedAt | leftAt | outcome seen|no-show|cancelled|removed      |
+   +-----------------------------------------------------------------+
+
+   Notes
+   - serviceName is copied into history so past visits still read correctly
+     after a visit type is renamed or deleted.
+   - Sessions are not a table. Login returns a signed token
+     (userId.role.expiry.HMAC-signature, Node's built-in crypto), so the
+     server verifies it without a lookup and the Database box keeps exactly
+     its four A1 tables.
+   - The notification outbox belongs to the Notification component (see
+     rules under diagram B).
+   - "waiting" and "hasCalled" on a service are computed from queueEntries on
+     every read and never stored, so they cannot drift (same as A2).
+
+
+ E. REQUEST FLOW - patient joins a queue, end to end
+
+   Mobile App          client.js           Back-end / API                  Database      Notification   SMS mock
+   (join-queue.js)                                                         (in-memory)   component
+       |                   |                     |                              |              |            |
+       | checkIn(s2,reason)|                     |                              |              |            |
+       |------------------>| POST /services/s2/queue                            |              |            |
+       |                   |  Authorization: Bearer <token>                     |              |            |
+       |                   |  { reason }         |                              |              |            |
+       |                   |-------------------->| requireAuth -> req.user      |              |            |
+       |                   |                     | validate(joinQueue)          |              |            |
+       |                   |                     |   (400 if reason bad)        |              |            |
+       |                   |                     | queueService.join            |              |            |
+       |                   |                     |   checkInBlocker ----------->| read service |            |
+       |                   |                     |   (409 full/closed/already)  | + line       |            |
+       |                   |                     |   queueRepo.insert --------->| write entry  |            |
+       |                   |                     | trigger({type:'joined'}) -------------------->| decide     |
+       |                   |                     |                              |              | outbox.add |
+       |                   |                     |                              |              |----------->| log/keep
+       |                   |<--------------------| 201 { entry, position,       |              |            |
+       |<------------------|                     |       estimatedWait }        |              |            |
+       | store refreshes   |                     |                              |              |            |
+       | (services, queue, |                     |                              |              |            |
+       |  notifications)   |                     |                              |              |            |
+
+
+-------------------------------------------------------------------------------
+ 4. MODULE DESIGNS
+-------------------------------------------------------------------------------
+
+ 4.1 AUTHENTICATION  (Back-end / API)
+
+   Endpoints        POST /auth/register, POST /auth/login, GET /auth/me
+   Passwords        Hashed with crypto.scrypt and a random 16-byte salt,
+                    compared with crypto.timingSafeEqual. The server never
+                    stores or returns a plain password.
+   Tokens           signToken({ userId, role }) -> "id.role.expiry.sig"
+                    with an HMAC-SHA256 signature. Expires after 8 hours.
+                    verifyToken rejects a bad signature or an expired token.
+   Roles            'user' (patient) or 'admin' (front desk).
+                    requireAuth     -> 401 with no token or a bad one
+                    requireRole('admin') -> 403 when the role is not admin
+   Admin sign-in    admin-login.js calls the same /auth/login and refuses
+                    the result unless user.role === 'admin'. The server also
+                    enforces this on every staff route.
+   Registration     Creates role 'user' only. Admin accounts come from the
+                    seed (admin@queuesmart.test), so nobody can register
+                    as staff.
+   Validation       Same rules the A2 screens use (see A3-api-spec.txt):
+                    name (two words), DOB (MM/DD/YYYY, real date, age 0-120),
+                    email format, strong password, optional 10-digit phone.
+
+
+ 4.2 SERVICE MANAGEMENT  (Back-end / API, admin writes)
+
+   Endpoints        GET  /services              any signed-in user
+                    GET  /services/:id          any signed-in user
+                    POST /services              admin
+                    PATCH /services/:id         admin
+                    PATCH /services/:id/open    admin
+                    DELETE /services/:id        admin
+   Required fields  name, description, expectedDuration, priority (the four
+                    the brief lists), plus capacity (office rule #4).
+   Business rules   - names are unique, ignoring case
+                    - capacity can't drop below the number waiting
+                    - closing stops new check-ins only (rule #9)
+                    - delete is blocked while anyone is in line (rule #10)
+   Response extras  waiting, hasCalled and estimatedWait, computed on read.
+
+
+ 4.3 QUEUE MANAGEMENT  (Back-end / API)
+
+   Patient          POST   /services/:id/queue     join  { reason }
+                    DELETE /queue/me               leave
+                    GET    /queue/me               my place, status, wait
+   Admin            GET    /services/:id/queue     view current line
+                    POST   /services/:id/queue/call    serve next
+                    POST   /services/:id/queue/called  { outcome }
+                    PATCH  /queue/:entryId         { direction } or { priority }
+                    DELETE /queue/:entryId         remove from line
+
+   Ordering - arrival order plus priority (brief: "Queue ordering should
+   consider arrival order and priority"):
+
+     Each line already belongs to one visit type, so the visit type's
+     priority can't order patients within its own line. Priority is
+     therefore stored on each queue entry:
+
+        entry.priority = 'normal' (default) | 'urgent' (set by staff triage)
+
+     The line is sorted by
+
+        1. priority rank, urgent before normal
+        2. order ASC   (arrival sequence; staff can swap within one level)
+
+     Example, Sick Visit line:
+        arrival:  Maria(1) James(2) Aisha(3) Daniel(4)
+        staff triage Daniel -> urgent
+        line:     Daniel(4,U) Maria(1) James(2) Aisha(3)
+
+   Entry lifecycle:
+
+        join
+          |
+          v
+     +-----------+  callNext (only one called per line)  +----------+
+     |  waiting  | ------------------------------------> |  called  |
+     +-----------+                                       +----------+
+       |   ^   |                                          |        |
+       |   |   +-- triage / move: re-sorted, stays waiting|        |
+       |   +-------------------------------------------+  |        |
+       |                                                  | seen   | no-show
+       | leave (patient)  -> history: cancelled           v        v
+       | remove (staff)   -> history: removed       history: seen / no-show
+       |                     (from either state)
+
+     Every transition also calls notifications.trigger(...)
+     (the "Alerts triggers" arrow).
+
+   Unchanged A2 rules: checkInBlocker (missing / already-checked-in /
+   closed / full), reason 3-120 chars, one check-in per patient, one called
+   patient per line. The isCurrentUser flag is replaced by req.user.id from
+   the token.
+
+
+ 4.4 WAIT-TIME ESTIMATION  (Back-end / API)
+
+   Rule-based, as in A1 and allowed by the brief:
+
+       low  = peopleAhead x service.expectedDuration
+       high = round(low x 1.3)
+       shown as "low-high min"
+
+   - Per service (joining now):   peopleAhead = waiting count
+   - Per patient (GET /queue/me): peopleAhead = index in the sorted line
+   - Closed or empty line: estimatedWait = null ("No wait" / "Closed")
+   The server computes it on every response. The phone only formats it.
+
+
+ 4.5 NOTIFICATIONS  ("Notification component" -> "SMS [external]")
+
+   The API reports what happened. The component decides who gets alerted
+   and when.
+
+   API event                    Decision (who / when)                 Delivery
+   ---------------------------  ------------------------------------  -----------------
+   queue.joined(entry)          the joiner, immediately ("joined")    outbox + SMS mock
+   queue.changed(serviceId)     every waiting entry whose             outbox + SMS mock
+     after call / leave /       peopleAhead <= HEAD_IN_AHEAD (2):
+     remove / move / triage     "almost-up", once per entry
+   queue.called(entry)          the called patient: "called"          outbox + SMS mock
+                                ("notify when the service is ready")
+
+   Rules
+   - Duplicates are skipped, keyed on (entryId, type), so reshuffles don't
+     spam the patient.
+   - Text never includes the reason for the visit; it can appear on a lock
+     screen (office rule #8).
+   - SMS goes out only when the user gave a phone number. The in-app outbox
+     always gets the message.
+   - MockSmsGateway.send(to, text) prints "[SMS -> 555...] text" and keeps a
+     sent list (tests read it). In A4 a real provider implements the same
+     send().
+
+   Endpoints        GET   /notifications/me
+                    PATCH /notifications/:id/read
+                    POST  /notifications/me/read-all
+   Front end        The bell sheet in src/app/user/dashboard.js reads this
+                    list instead of building notifications on the phone.
+
+
+ 4.6 HISTORY  (Back-end / API -> Database.history)
+
+   - historyService.record(entry, outcome) runs on every exit from a line:
+     seen, no-show, cancelled or removed.
+   - GET /history/me returns the signed-in patient's visits, newest first.
+     A patient can never read anyone else's history.
+   - Admin statistics (the "view statistics" arrow in A1 #1):
+       GET /stats -> per service, for today: served, noShows, cancelled,
+                     currentlyWaiting, averageWaitMinutes
+     All of it is read from history and queueEntries. Nothing extra is
+     stored.
+
+
+-------------------------------------------------------------------------------
+ 5. VALIDATION AND ERROR CONTRACT
+-------------------------------------------------------------------------------
+
+ Every route with a body runs validate(schema) before its controller. Each
+ field is checked in this order:
+
+     1. required        missing, null or blank string        -> error
+     2. type            string / integer / boolean / enum    -> error
+     3. length / range  minLength, maxLength, intRange       -> error
+     4. format          email, date, phone, password rules   -> error
+
+ All failing fields come back together, so the form can show every error
+ at once.
+
+ Every error, from any route, has this shape:
+
+     HTTP 400  { "error": "validation",
+                 "fields": { "name": "Use 3-60 characters.",
+                             "expectedDuration": "Enter a whole number from 1 to 240." } }
+     HTTP 401  { "error": "unauthenticated", "message": "..." }
+     HTTP 403  { "error": "forbidden",       "message": "..." }
+     HTTP 404  { "error": "not-found",       "message": "..." }
+     HTTP 409  { "error": "<rule>",          "message": "..." }
+               rule = full | closed | already-checked-in | already-calling
+                      | empty | nothing-called | patients-in-line
+                      | capacity-below-waiting
+                      | email-taken | name-taken
+     HTTP 500  { "error": "server", "message": "Something went wrong." }
+
+ The 409 codes reuse the strings A2's checkInBlocker and deleteService
+ already return, so the screens' existing error messages keep working.
+
+
+-------------------------------------------------------------------------------
+ 6. FRONT-END INTEGRATION  ("Send requests to" arrow)
+-------------------------------------------------------------------------------
+
+ Layering stays as in the README, with HTTP between api and the server:
+
+   screens -> frontend/state -> src/api -> (HTTP) -> server/
+
+ 6.1 src/api/client.js  (new)
+     - request(method, path, body) -> parsed JSON
+     - Base URL: EXPO_PUBLIC_API_URL if set. Otherwise the laptop's LAN IP
+       from Constants.expoConfig.hostUri plus ":4000", because Expo Go on a
+       phone can't reach "localhost".
+     - Attaches "Authorization: Bearer <token>".
+     - On a non-2xx response, throws ApiError { status, error, fields, message }.
+
+ 6.2 src/api/*.js
+     - services.js and queue.js keep the same function names; their bodies
+       become request(...) calls.
+     - New: auth.js, notifications.js, history.js, stats.js.
+
+ 6.3 src/frontend/state/ServicesStore.js
+     - readAll() becomes async; change() awaits the call and then refreshes.
+     - Holds { token, user } and exposes useAuth(): login, register, logout.
+     - Polls every 5 s while signed in, so a patient sees their place move
+       after staff serve the next person on another device.
+
+ 6.4 Screens (small edits)
+     - Add await wherever an action's result is used, e.g.
+       join-queue.js (checkIn) and admin/services/[id].js (create/delete).
+     - login.js, register.js and admin-login.js call the auth API. Server
+       400 fields are shown under the matching <Field>.
+     - The dashboard bell reads GET /notifications/me.
+     - The admin dashboard can show GET /stats.
+
+ 6.5 Client-side rules
+     The rules the screens need for instant feedback (REASON_MAX,
+     EMERGENCY_NOTICE, validateReason, displayName, formatWait) are copied
+     into src/frontend/rules.js. The server always re-checks and is the
+     authority.
+
+ 6.6 Clean-up
+     src/backend/ and src/database/ are deleted from the app once the
+     server owns them, so there is only one source of truth.
+
+ 6.7 Running both
+     terminal 1:  cd server && npm install && npm run dev   (port 4000)
+     terminal 2:  npx expo start
+     The phone and the laptop must be on the same Wi-Fi.
+
+
+-------------------------------------------------------------------------------
+ 7. TEAM SPLIT AND MERGE ORDER  (one A1 box per person)
+-------------------------------------------------------------------------------
+
+   Owner  A1 box / modules                                   Branch
+   -----  -------------------------------------------------  -------------------------------
+   A      Back-end/API scaffold (app.js, middleware,          feature/a3-auth-core
+          validation rules + schemas, error handler) + Auth
+   B      Database stand-in + repositories, Services,         feature/a3-services-data
+          wait estimate, Stats
+   C      Queue management (ordering, priority, triage)       feature/a3-queue-history
+          + History
+   D      Notification component + SMS mock + Mobile App      feature/a3-notify-integration
+          integration (client.js, ServicesStore, screens)
+
+   Merge order: A first, because everyone imports its middleware and
+   validation. Then B, then C (C needs B's repositories). D merges last
+   and can start against the endpoint shapes in A3-api-spec.txt before
+   the server is finished.
+
+   Each owner writes the unit tests for their own module (see
+   A3-testing-plan.txt).
+
+
+-------------------------------------------------------------------------------
+ 8. REQUIREMENT CHECKLIST  (A3 brief -> this design)
+-------------------------------------------------------------------------------
+
+   [ ] 1. Authentication module
+            registration .................................. 4.1, POST /auth/register
+            login ......................................... 4.1, POST /auth/login
+            role handling (User vs Administrator) ......... 4.1, requireRole
+            basic input validation ........................ 4.1, section 5
+   [ ] 2. Service management module
+            create / update / list ........................ 4.2
+            name, description, expected duration, priority  4.2, api-spec
+   [ ] 3. Queue management module
+            user join / leave ............................. 4.3
+            admin view current queue / serve next ......... 4.3
+            ordering by arrival order + priority .......... 4.3 "Ordering"
+   [ ] 4. Wait-time estimation (position x duration) ...... 4.4
+   [ ] 5. Notification module
+            on join ....................................... 4.5 "joined"
+            close to being served ......................... 4.5 "almost-up"
+            logged / returned to front end ................ 4.5 outbox + SMS mock
+   [ ] 6. History module (in memory) ...................... 4.6
+   [ ] Deliverable 1: backend validation
+            required fields / types / length limits ....... section 5, api-spec
+            appropriate error responses ................... section 5
+   [ ] Deliverable 2: unit tests, 70-80% coverage ......... A3-testing-plan.txt
+   [ ] Deliverable 3: front end calls backend APIs ........ section 6
+   [ ] Deliverable 4: no database (in memory) ............. diagram D, 2
+
+   A1 diagram consistency
+   [ ] Every A1 box has a named home in the code .......... section 2
+   [ ] Every A1 arrow has a named call path ............... section 2, diagram B
+
+
+-------------------------------------------------------------------------------
+ 9. OUT OF SCOPE FOR A3  (planned for A4 or later)
+-------------------------------------------------------------------------------
+
+   - A real SQL database. Only the files in server/src/database/
+     repositories/ change.
+   - A real SMS provider and phone verification codes ("verifications" in the
+     A1 SMS box). Only smsGateway.js changes.
+   - Push notifications and websockets. A3 polls every 5 s.
+   - Automatic no-show timers. The 10-minute grace period stays guidance
+     for staff.
+   - Password reset and admin account management.
