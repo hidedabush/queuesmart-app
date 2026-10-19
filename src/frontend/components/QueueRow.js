@@ -21,6 +21,8 @@ export function waitText(service) {
 export default function QueueRow({ service, isBusiest = false, onOpen, onToggle, preview = false }) {
   const { isOpen } = service;
   const count = isOpen ? String(service.waiting).padStart(2, '0') : '--';
+  // Check-in closes automatically once the line reaches its daily capacity.
+  const isFull = isOpen && service.waiting >= service.capacity;
 
   const body = (
     <>
@@ -29,6 +31,11 @@ export default function QueueRow({ service, isBusiest = false, onOpen, onToggle,
           {service.name}
         </Text>
         <View style={styles.meta}>
+          {isFull ? (
+            <View style={[styles.closedTag, { borderColor: colors.accent }]}>
+              <Text style={[styles.closedTagText, { color: colors.accentText }]}>Full</Text>
+            </View>
+          ) : null}
           {isOpen ? (
             <Text style={styles.wait}>{waitText(service)}</Text>
           ) : (
@@ -55,7 +62,9 @@ export default function QueueRow({ service, isBusiest = false, onOpen, onToggle,
   );
 
   const label = `${service.name}, ${isOpen ? `${service.waiting} waiting, ${waitText(service)}` : 'closed'}${
-    isBusiest ? ', busiest queue' : ''
+    isFull ? ', full for today' : ''
+  }${
+    isBusiest ? ', longest line' : ''
   }`;
 
   return (
@@ -69,7 +78,7 @@ export default function QueueRow({ service, isBusiest = false, onOpen, onToggle,
           onPress={onOpen}
           accessibilityRole="button"
           accessibilityLabel={label}
-          accessibilityHint="Opens queue management"
+          accessibilityHint="Opens the waiting line"
           style={({ pressed, hovered }) => [
             styles.main,
             hovered && { backgroundColor: colors.hover },
@@ -86,8 +95,12 @@ export default function QueueRow({ service, isBusiest = false, onOpen, onToggle,
         value={isOpen}
         onValueChange={onToggle}
         disabled={preview}
-        label={`${service.name} queue open`}
-        hint={isOpen ? 'Stops new people joining' : 'Lets people join again'}
+        label={`${service.name} open for check-in`}
+        hint={
+          isOpen
+            ? 'Stops new check-ins. Patients already in line keep their place'
+            : 'Lets patients check in again'
+        }
         style={styles.toggle}
       />
     </View>

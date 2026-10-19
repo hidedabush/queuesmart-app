@@ -1,11 +1,12 @@
 import { Stack, useRouter } from 'expo-router';
-import { StyleSheet, Text, View } from 'react-native';
+import { Alert, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import {
   useQueue,
   useServices,
 } from '../../frontend/state/ServicesStore';
 
+import { checkInStatus, formatEstimate } from '../../frontend/checkInStatus';
 import Button from '../../frontend/components/Button';
 
 import {
@@ -18,120 +19,122 @@ import {
 export default function QueueStatus() {
   const router = useRouter();
   const { services } = useServices();
-  const { activeQueue, leaveQueue } = useQueue();
+  const { activeQueue, cancelCheckIn } = useQueue();
 
   const service = activeQueue
     ? services.find(
         (item) => item.id === activeQueue.serviceId
       )
     : null;
+  const status = activeQueue ? checkInStatus(activeQueue) : null;
+  const isCalled = activeQueue?.status === 'called';
 
-  // Back to the service list. It is normally the previous screen; replace
+  // Back to the visit type list. It is normally the previous screen; replace
   // covers the case where this screen was opened directly.
-  function goToJoin() {
+  function goToCheckIn() {
     if (router.canGoBack()) router.back();
     else router.replace('/user/join-queue');
   }
 
-  function handleLeave() {
-    leaveQueue();
-    goToJoin();
+  function confirmCancel() {
+    cancelCheckIn();
+    goToCheckIn();
   }
 
-  function getStatusLabel(status) {
-    switch (status) {
-      case 'almost-ready':
-        return 'Almost ready';
+  function handleCancel() {
+    const title = 'Cancel your check-in?';
+    const message = 'You will lose your place in line. Checking in again puts you at the back.';
 
-      case 'served':
-        return 'Served';
-
-      default:
-        return 'Waiting';
+    // Alert.alert with buttons is a no-op on react-native-web.
+    if (Platform.OS === 'web') {
+      if (window.confirm(`${title}\n\n${message}`)) confirmCancel();
+      return;
     }
-  }
 
-  function getStatusMessage(status) {
-    switch (status) {
-      case 'almost-ready':
-        return 'You are almost up. Please be ready.';
-
-      case 'served':
-        return 'Your queue visit has been completed.';
-
-      default:
-        return 'You are currently waiting in line.';
-    }
+    Alert.alert(title, message, [
+      { text: 'Keep my place', style: 'cancel' },
+      { text: 'Cancel check-in', style: 'destructive', onPress: confirmCancel },
+    ]);
   }
 
   return (
-    <View style={styles.screen}>
-      <Stack.Screen options={{ title: 'Queue Status' }} />
+    <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
+      <Stack.Screen options={{ title: 'My check-in' }} />
 
-      <View style={styles.content}>
-        <Text style={type.title}>
-          Your Queue Status
-        </Text>
+      <Text style={type.title}>
+        Your check-in
+      </Text>
 
-        {!activeQueue || !service ? (
-          <>
-            <Text style={styles.empty}>
-              You are not currently in a queue.
-            </Text>
+      {!activeQueue || !service ? (
+        <>
+          <Text style={styles.empty}>
+            You are not checked in for a visit right now.
+          </Text>
 
-            <Button
-              label="Join a queue"
-              onPress={goToJoin}
-              style={{ marginTop: spacing.xl }}
-            />
-          </>
-        ) : (
-          <View style={styles.card}>
-            <Text style={type.heading}>
-              {service.name}
-            </Text>
+          <Button
+            label="Check in for a visit"
+            onPress={goToCheckIn}
+            style={{ marginTop: spacing.xl }}
+          />
+        </>
+      ) : (
+        <View style={[styles.card, status.urgent && styles.cardUrgent]}>
+          <Text style={type.heading}>
+            {service.name}
+          </Text>
 
-            <Text style={styles.status}>
-              {getStatusLabel(activeQueue.status)}
-            </Text>
+          <Text style={[styles.status, status.urgent && { color: colors.accentText }]}>
+            {status.label}
+          </Text>
 
+          {isCalled ? null : (
             <View style={styles.positionBox}>
               <Text style={styles.positionNumber}>
                 #{activeQueue.position}
               </Text>
 
               <Text style={styles.positionLabel}>
-                Your position
+                Your place in line
               </Text>
             </View>
+          )}
 
+          {isCalled ? null : (
             <Text style={styles.wait}>
-              Estimated wait:{' '}
-              {activeQueue.estimatedWait.low}–
-              {activeQueue.estimatedWait.high} min
+              Estimated wait: {formatEstimate(activeQueue.estimatedWait)}
             </Text>
+          )}
 
-            <Text style={styles.description}>
-              {getStatusMessage(activeQueue.status)}
-            </Text>
+          <Text style={styles.description} accessibilityLiveRegion="polite">
+            {status.message}
+          </Text>
 
-            <Button
-              label="Leave Queue"
-              variant="danger"
-              onPress={handleLeave}
-              style={{ marginTop: spacing.xl }}
-            />
+          <View style={styles.reasonBox}>
+            <Text style={type.label}>Reason for visit</Text>
+            <Text style={[type.body, { marginTop: spacing.xs }]}>{activeQueue.reason}</Text>
           </View>
-        )}
 
-        <Button
-          label="Back to dashboard"
-          variant="secondary"
-          onPress={() => router.replace('/user/dashboard')}
-          style={{ marginTop: spacing.xl }}
-        />
-      </View>
-    </View>
+          <Text style={styles.note}>
+            At the front desk, have a photo ID and your insurance card ready. Staff
+            will confirm your name and date of birth.
+          </Text>
+
+          <Button
+            label="Cancel check-in"
+            variant="danger"
+            onPress={handleCancel}
+            style={{ marginTop: spacing.xl }}
+          />
+        </View>
+      )}
+
+      <Button
+        label="Back to dashboard"
+        variant="secondary"
+        onPress={() => router.replace('/user/dashboard')}
+        style={{ marginTop: spacing.xl }}
+      />
+    </ScrollView>
   );
 }
 
@@ -143,6 +146,7 @@ const styles = StyleSheet.create({
 
   content: {
     padding: spacing.lg,
+    paddingBottom: spacing.xxl,
   },
 
   empty: {
@@ -155,6 +159,12 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     padding: spacing.xl,
     marginTop: spacing.lg,
+  },
+
+  cardUrgent: {
+    borderWidth: 1,
+    borderLeftWidth: 4,
+    borderColor: colors.accent,
   },
 
   status: {
@@ -191,5 +201,17 @@ const styles = StyleSheet.create({
   description: {
     ...type.secondary,
     marginTop: spacing.sm,
+  },
+
+  reasonBox: {
+    marginTop: spacing.xl,
+    paddingTop: spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: colors.line,
+  },
+
+  note: {
+    ...type.secondary,
+    marginTop: spacing.lg,
   },
 });

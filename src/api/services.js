@@ -41,3 +41,6 @@ export function setQueueOpen(id, isOpen) {
 
 // Computed by the server in A3 and returned with each service.
 export { estimateWait, formatWait } from '../backend/waitEstimate';
+
+// Office policy shared with the screens.
+export { DEFAULT_CAPACITY, MAX_CAPACITY } from '../backend/officeRules';

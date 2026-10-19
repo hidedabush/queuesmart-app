@@ -20,20 +20,21 @@ import { PriorityMeter } from '../../../frontend/components/Pill';
 import { useToast } from '../../../frontend/components/Toast';
 import { contentWidth, useLayout } from '../../../frontend/hooks/useLayout';
 import { colors, fonts, layout, priorityLevels, radius, spacing, touch, type } from '../../../frontend/theme';
+import { DEFAULT_CAPACITY, MAX_CAPACITY } from '../../../api/services';
 
 const MAX_NAME = 100;
-const MAX_DURATION = 480; // eight hours; anything longer is a data-entry mistake
+const MAX_DURATION = 120; // two hours; a longer walk-in visit is a data-entry mistake
 const PRIORITIES = ['low', 'medium', 'high'];
-const DURATION_PRESETS = [5, 10, 15, 30, 45, 60];
-const FIELD_ORDER = ['name', 'description', 'duration'];
+const DURATION_PRESETS = [5, 10, 15, 20, 30, 45];
+const FIELD_ORDER = ['name', 'description', 'duration', 'capacity'];
 const MAIN_COLUMN = 640;
 const SIDE_COLUMN = 360;
 
 /**
- * Service Management — create and edit (A2 requirements 3.2 and 5)
+ * Service Management (visit types) — create and edit (A2 requirements 3.2 and 5)
  *
  * One screen handles both cases. The route parameter is either 'new' or an
- * existing service id, which keeps the field list and the validation rules in
+ * existing visit type id, which keeps the field list and the validation rules in
  * a single place instead of duplicated across two screens.
  *
  * Validation runs on submit, and re-runs on every keystroke afterwards, so a
@@ -58,11 +59,17 @@ export default function ServiceForm() {
     existing ? String(existing.expectedDuration) : ''
   );
   const [priority, setPriority] = useState(existing?.priority ?? 'medium');
+  const [capacity, setCapacity] = useState(String(existing?.capacity ?? DEFAULT_CAPACITY));
 
   const [errors, setErrors] = useState({});
   const [submitted, setSubmitted] = useState(false);
 
-  const refs = { name: useRef(null), description: useRef(null), duration: useRef(null) };
+  const refs = {
+    name: useRef(null),
+    description: useRef(null),
+    duration: useRef(null),
+    capacity: useRef(null),
+  };
   // Set once this screen deletes its own service, so the closing screen keeps
   // showing the form instead of flashing the "not found" state.
   const deleted = useRef(false);
@@ -81,13 +88,13 @@ export default function ServiceForm() {
       <View style={[styles.screen, styles.missing, contentWidth(layout.readable, gutter)]}>
         <Text style={[type.label, { color: colors.accentText }]}>Not found</Text>
         <Text style={[type.title, { marginTop: spacing.sm }]}>
-          This service is no longer available
+          This visit type is no longer available
         </Text>
         <Text style={[type.secondary, { marginTop: spacing.xs }]}>
           It may have been deleted. Go back to see the current list.
         </Text>
         <Button
-          label="Back to services"
+          label="Back to visit types"
           onPress={() => router.replace('/admin/services')}
           style={{ marginTop: spacing.xl }}
         />
@@ -100,17 +107,17 @@ export default function ServiceForm() {
 
     const trimmedName = values.name.trim();
     if (!trimmedName) {
-      next.name = 'Enter a service name.';
+      next.name = 'Enter a visit type name.';
     } else if (trimmedName.length > MAX_NAME) {
       next.name = `Keep the name to ${MAX_NAME} characters or fewer.`;
     }
 
     if (!values.description.trim()) {
-      next.description = 'Describe what this service is for.';
+      next.description = 'Describe what this visit type is for.';
     }
 
     if (!values.duration.trim()) {
-      next.duration = 'Enter how long one appointment usually takes.';
+      next.duration = 'Enter how long one visit usually takes.';
     } else if (!/^\d+$/.test(values.duration.trim())) {
       next.duration = 'Use whole minutes, digits only.';
     } else {
@@ -123,7 +130,19 @@ export default function ServiceForm() {
     }
 
     if (!PRIORITIES.includes(values.priority)) {
-      next.priority = 'Choose a priority level.';
+      next.priority = 'Choose an urgency level.';
+    }
+
+    const inLine = existing?.waiting ?? 0;
+    if (!/^\d+$/.test(values.capacity.trim())) {
+      next.capacity = 'Enter the most patients this line can take in a day, digits only.';
+    } else {
+      const limit = Number(values.capacity);
+      if (limit < 1 || limit > MAX_CAPACITY) {
+        next.capacity = `Daily capacity must be between 1 and ${MAX_CAPACITY}.`;
+      } else if (limit < inLine) {
+        next.capacity = `${inLine} patients are already in line. Capacity cannot be lower than that.`;
+      }
     }
 
     return next;
@@ -132,11 +151,11 @@ export default function ServiceForm() {
   // Once the person has tried to save, keep the errors current as they type.
   function revalidate(patch) {
     if (!submitted) return;
-    setErrors(validate({ name, description, duration, priority, ...patch }));
+    setErrors(validate({ name, description, duration, priority, capacity, ...patch }));
   }
 
   function handleSave() {
-    const values = { name, description, duration, priority };
+    const values = { name, description, duration, priority, capacity };
     const found = validate(values);
     setSubmitted(true);
     setErrors(found);
@@ -152,6 +171,7 @@ export default function ServiceForm() {
       description: description.trim(),
       expectedDuration: Number(duration),
       priority,
+      capacity: Number(capacity),
     };
 
     if (isNew) {
@@ -165,16 +185,19 @@ export default function ServiceForm() {
   }
 
   function confirmDelete() {
-    deleted.current = true;
     const deletedName = existing.name;
+    if (deleteService(id)?.error) {
+      toast(`${deletedName} still has patients in line`);
+      return;
+    }
+    deleted.current = true;
     leave();
-    deleteService(id);
     toast(`${deletedName} deleted`);
   }
 
   function handleDelete() {
     const title = `Delete ${existing.name}?`;
-    const message = 'People currently in this queue will be removed. This cannot be undone.';
+    const message = 'Patients will no longer be able to check in for it. This cannot be undone.';
 
     // Alert.alert with buttons is a no-op on react-native-web.
     if (Platform.OS === 'web') {
@@ -183,12 +206,13 @@ export default function ServiceForm() {
     }
 
     Alert.alert(title, message, [
-      { text: 'Keep service', style: 'cancel' },
+      { text: 'Keep visit type', style: 'cancel' },
       { text: 'Delete', style: 'destructive', onPress: confirmDelete },
     ]);
   }
 
   const errorCount = Object.keys(errors).length;
+  const patientsInLine = Boolean(existing && (existing.waiting > 0 || existing.hasCalled));
 
   return (
     <KeyboardAvoidingView
@@ -214,7 +238,7 @@ export default function ServiceForm() {
 
             <Field
               inputRef={refs.name}
-              label="Service name"
+              label="Visit type name"
               value={name}
               onChangeText={(text) => {
                 setName(text);
@@ -223,7 +247,7 @@ export default function ServiceForm() {
               error={errors.name}
               maxLength={MAX_NAME}
               showCounter
-              placeholder="e.g. Academic Advising"
+              placeholder="e.g. Sick Visit"
               autoCapitalize="words"
               returnKeyType="next"
               submitBehavior="submit"
@@ -240,8 +264,8 @@ export default function ServiceForm() {
               }}
               error={errors.description}
               multiline
-              helper="Shown to people choosing a service, so describe it in their words."
-              placeholder="e.g. Degree planning, course selection, and registration holds."
+              helper="Shown to patients choosing a visit type, so list symptoms or needs in plain words."
+              placeholder="e.g. Fever, cough, sore throat, ear pain, and other new symptoms."
             />
 
             <Field
@@ -256,7 +280,7 @@ export default function ServiceForm() {
               keyboardType="number-pad"
               maxLength={3}
               suffix="min"
-              helper="Minutes per person. Used to estimate wait times."
+              helper="Average minutes per patient. Used to estimate wait times."
               placeholder="e.g. 15"
             >
               <View style={styles.presets} accessibilityLabel="Common durations">
@@ -290,9 +314,25 @@ export default function ServiceForm() {
               </View>
             </Field>
 
+            <Field
+              inputRef={refs.capacity}
+              label="Daily capacity"
+              value={capacity}
+              onChangeText={(text) => {
+                setCapacity(text);
+                revalidate({ capacity: text });
+              }}
+              error={errors.capacity}
+              keyboardType="number-pad"
+              maxLength={2}
+              suffix="patients"
+              helper="The most walk-ins this line takes in a day. Check-in closes automatically when it is full."
+              placeholder={`e.g. ${DEFAULT_CAPACITY}`}
+            />
+
             <View style={styles.priorityBlock}>
-              <Text style={[type.fieldLabel, { marginBottom: spacing.sm }]}>Priority level</Text>
-              <View style={styles.tiles} accessibilityRole="radiogroup" accessibilityLabel="Priority level">
+              <Text style={[type.fieldLabel, { marginBottom: spacing.sm }]}>Urgency</Text>
+              <View style={styles.tiles} accessibilityRole="radiogroup" accessibilityLabel="Urgency">
                 {PRIORITIES.map((level) => {
                   const selected = priority === level;
                   return (
@@ -304,7 +344,7 @@ export default function ServiceForm() {
                       }}
                       accessibilityRole="radio"
                       aria-checked={selected}
-                      accessibilityLabel={`${priorityLevels[level].label} priority`}
+                      accessibilityLabel={`Urgency: ${priorityLevels[level].label}`}
                       accessibilityHint={priorityLevels[level].hint}
                       style={({ pressed, hovered }) => [
                         styles.tile,
@@ -339,13 +379,20 @@ export default function ServiceForm() {
               live={existing}
             />
 
-            {!isNew ? (
+            {!isNew && existing ? (
               <View style={styles.dangerZone}>
                 <Text style={[type.label, { color: colors.accentText }]}>Danger zone</Text>
                 <Text style={[type.secondary, { marginVertical: spacing.sm }]}>
-                  Deleting removes the service and everyone waiting in its queue.
+                  {patientsInLine
+                    ? 'Patients are still in this line, so it cannot be deleted. Close it to new check-ins from the dashboard and let the line clear first.'
+                    : 'Deleting removes this visit type. Patients will no longer be able to check in for it.'}
                 </Text>
-                <Button label="Delete service" variant="danger" onPress={handleDelete} />
+                <Button
+                  label="Delete visit type"
+                  variant="danger"
+                  onPress={handleDelete}
+                  disabled={patientsInLine}
+                />
               </View>
             ) : null}
           </View>
@@ -361,7 +408,7 @@ export default function ServiceForm() {
             style={isWide ? styles.cancelWide : styles.cancel}
           />
           <Button
-            label={isNew ? 'Create service' : 'Save changes'}
+            label={isNew ? 'Add visit type' : 'Save changes'}
             onPress={handleSave}
             style={isWide ? styles.saveWide : styles.save}
           />
@@ -377,7 +424,7 @@ export default function ServiceForm() {
 function Preview({ name, description, duration, priority, live }) {
   const minutes = /^\d+$/.test(duration) && Number(duration) > 0 ? Number(duration) : 0;
   const service = {
-    name: name.trim() || 'Service name',
+    name: name.trim() || 'Visit type name',
     description,
     expectedDuration: minutes,
     priority,

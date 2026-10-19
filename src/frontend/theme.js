@@ -106,10 +106,19 @@ export const headerOptions = {
   headerShadowVisible: false,
 };
 
-// Priority is shown as a 1-3 bar meter plus a word, so it never relies on
-// colour alone. Only "high" uses the red accent.
+// A visit type's urgency, shown as a 1-3 bar meter plus a word, so it never
+// relies on colour alone. Only "high" (Urgent) uses the red accent. The keys
+// stay low/medium/high so stored data does not change.
 export const priorityLevels = {
-  low: { level: 1, label: 'Low', hint: 'Served after other queues when they overlap.' },
-  medium: { level: 2, label: 'Medium', hint: 'Standard ordering.' },
-  high: { level: 3, label: 'High', hint: 'Served first when queues overlap.' },
+  low: {
+    level: 1,
+    label: 'Routine',
+    hint: 'Planned care such as labs or shots. Seen after urgent and standard visits when providers are busy.',
+  },
+  medium: { level: 2, label: 'Standard', hint: 'New symptoms. Seen in check-in order.' },
+  high: {
+    level: 3,
+    label: 'Urgent',
+    hint: 'Needs care today, but is not an emergency. Seen first when a provider frees up.',
+  },
 };

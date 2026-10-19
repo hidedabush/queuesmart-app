@@ -12,31 +12,13 @@ import {
 } from 'react-native';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { EMERGENCY_NOTICE } from '../../api/queue';
 import { formatWait } from '../../api/services';
+import { checkInStatus, formatEstimate } from '../../frontend/checkInStatus';
 import Button from '../../frontend/components/Button';
-import { OpenPill } from '../../frontend/components/Pill';
+import { AvailabilityPill } from '../../frontend/components/Pill';
 import { useQueue, useServices } from '../../frontend/state/ServicesStore';
 import { colors, radius, spacing, type } from '../../frontend/theme';
-
-function getQueueStatus(status) {
-  switch (status) {
-    case 'almost-ready':
-      return {
-        label: 'Almost ready',
-        message: 'You are almost up. Please be ready.',
-      };
-    case 'served':
-      return {
-        label: 'Visit complete',
-        message: 'Your queue visit has been completed.',
-      };
-    default:
-      return {
-        label: 'Waiting',
-        message: 'You are currently waiting in line.',
-      };
-  }
-}
 
 function BellIcon() {
   return (
@@ -171,28 +153,31 @@ export default function UserDashboard() {
     ? services.find((item) => item.id === activeQueue.serviceId)
     : null;
   const openServices = services.filter((item) => item.isOpen);
-  const queueStatus = activeQueue ? getQueueStatus(activeQueue.status) : null;
+  const queueStatus = activeQueue ? checkInStatus(activeQueue) : null;
 
+  // Never includes the reason for the visit: notifications can show on a
+  // lock screen.
   const notifications = useMemo(() => {
     const items = [];
 
     if (activeQueue && service) {
-      const message = getQueueStatus(activeQueue.status).message;
+      const status = checkInStatus(activeQueue);
       items.push({
-        id: 'queue-status',
-        title: `${service.name}: ${getQueueStatus(activeQueue.status).label}`,
-        message,
+        // Keyed by status so a new stage shows again after an old one was dismissed.
+        id: `check-in-${activeQueue.id}-${activeQueue.status}`,
+        title: `${service.name}: ${status.label}`,
+        message: status.message,
         time: 'Just now',
-        urgent: activeQueue.status === 'almost-ready',
+        urgent: status.urgent,
       });
     }
 
     openServices.slice(0, activeQueue ? 1 : 2).forEach((item) => {
       items.push({
         id: `open-${item.id}`,
-        title: `${item.name} is open`,
+        title: `${item.name}: walk-ins open`,
         message: `${item.waiting} waiting · about ${formatWait(item)}.`,
-        time: 'Service update',
+        time: 'Office update',
         urgent: false,
       });
     });
@@ -229,14 +214,14 @@ export default function UserDashboard() {
           </Pressable>
           <View style={styles.brandBlock}>
             <Text style={styles.brand}>QueueSmart</Text>
-            <Text style={styles.kicker}>USER DASHBOARD</Text>
+            <Text style={styles.kicker}>PATIENT CHECK-IN</Text>
           </View>
           <View style={styles.topActions}>
             <Pressable
               style={({ pressed }) => [styles.headerIconButton, pressed && styles.pressed]}
               onPress={() => router.push('/user/history')}
               accessibilityRole="button"
-              accessibilityLabel="View queue history"
+              accessibilityLabel="View visit history"
             >
               <HistoryIcon />
             </Pressable>
@@ -249,12 +234,14 @@ export default function UserDashboard() {
         </View>
 
         <View style={styles.welcome}>
-          <Text style={styles.welcomeTitle}>Your day, in order.</Text>
-          <Text style={styles.welcomeCopy}>Check your place or find a service.</Text>
+          <Text style={styles.welcomeTitle}>Skip the waiting room.</Text>
+          <Text style={styles.welcomeCopy}>
+            Check in for a same-day visit and wait wherever you like.
+          </Text>
         </View>
 
         <View style={styles.sectionHeading}>
-          <Text style={type.label}>Your queue</Text>
+          <Text style={type.label}>Your check-in</Text>
           <View style={styles.liveLabel}>
             <View style={styles.liveDot} />
             <Text style={styles.liveText}>LIVE</Text>
@@ -269,22 +256,24 @@ export default function UserDashboard() {
                 <Text style={styles.queueStatus}>{queueStatus.label}</Text>
               </View>
               <View style={styles.positionBlock}>
-                <Text style={styles.positionValue}>#{activeQueue.position}</Text>
+                <Text style={styles.positionValue}>
+                  {activeQueue.status === 'called' ? 'NOW' : `#${activeQueue.position}`}
+                </Text>
                 <Text style={styles.positionLabel}>YOUR PLACE</Text>
               </View>
             </View>
             <View style={styles.queueDivider} />
             <View style={styles.queuePanelBottom}>
               <Text style={styles.queueMessage}>{queueStatus.message}</Text>
-              <View style={styles.waitBlock}>
-                <Text style={styles.waitValue}>
-                  {activeQueue.estimatedWait.low}-{activeQueue.estimatedWait.high} min
-                </Text>
-                <Text style={styles.positionLabel}>EST. WAIT</Text>
-              </View>
+              {activeQueue.status === 'called' ? null : (
+                <View style={styles.waitBlock}>
+                  <Text style={styles.waitValue}>{formatEstimate(activeQueue.estimatedWait)}</Text>
+                  <Text style={styles.positionLabel}>EST. WAIT</Text>
+                </View>
+              )}
             </View>
             <Button
-              label="View queue status"
+              label="View my check-in"
               onPress={() => router.push('/user/queue-status')}
               style={styles.queueButton}
             />
@@ -292,13 +281,13 @@ export default function UserDashboard() {
         ) : (
           <View style={styles.emptyQueuePanel}>
             <View style={styles.emptyQueueCopy}>
-              <Text style={styles.emptyQueueTitle}>Nothing in line yet</Text>
+              <Text style={styles.emptyQueueTitle}>You are not checked in</Text>
               <Text style={styles.emptyQueueDescription}>
-                Join an open service and keep your place updated here.
+                Check in for a walk-in visit and follow your place in line here.
               </Text>
             </View>
             <Button
-              label="Join a queue"
+              label="Check in for a visit"
               onPress={() => router.push('/user/join-queue')}
               style={styles.queueButton}
             />
@@ -308,9 +297,9 @@ export default function UserDashboard() {
         <View style={styles.servicesSection}>
           <View style={styles.sectionTitleRow}>
             <View>
-              <Text style={type.label}>Available services</Text>
+              <Text style={type.label}>Walk-in visit types</Text>
               <Text style={styles.sectionSubtitle}>
-                {openServices.length} {openServices.length === 1 ? 'service' : 'services'} open
+                {openServices.length} open now
               </Text>
             </View>
             <Text style={styles.scrollHint}>SWIPE  &gt;</Text>
@@ -331,11 +320,11 @@ export default function UserDashboard() {
                     params: { selectedServiceId: item.id },
                   })}
                   accessibilityRole="button"
-                  accessibilityLabel={`View ${item.name} in available services`}
+                  accessibilityLabel={`View ${item.name} in walk-in visit types`}
                 >
                   <View style={styles.serviceTileTop}>
                     <Text style={styles.serviceIndex}>0{index + 1}</Text>
-                    <OpenPill isOpen={item.isOpen} />
+                    <AvailabilityPill service={item} />
                   </View>
                   <Text style={styles.serviceName} numberOfLines={2}>{item.name}</Text>
                   <Text style={styles.serviceDescription} numberOfLines={2}>
@@ -352,18 +341,20 @@ export default function UserDashboard() {
                       <Text style={styles.metricLabel}>EST. WAIT</Text>
                     </View>
                   </View>
-                  <Text style={styles.serviceAction}>VIEW SERVICE  &gt;</Text>
+                  <Text style={styles.serviceAction}>VIEW VISIT TYPE  &gt;</Text>
                 </Pressable>
               ))}
             </ScrollView>
           ) : (
             <View style={styles.noServices}>
-              <Text style={styles.noServicesText}>All service queues are closed right now.</Text>
+              <Text style={styles.noServicesText}>The office is not taking walk-ins right now.</Text>
             </View>
           )}
 
+          <Text style={styles.emergencyNote}>{EMERGENCY_NOTICE}</Text>
+
           <Button
-            label="Browse all services"
+            label="See all visit types"
             variant="secondary"
             onPress={() => router.push('/user/join-queue')}
             style={styles.browseButton}
@@ -395,7 +386,7 @@ export default function UserDashboard() {
             <View style={styles.sheetHeading}>
               <View style={styles.sheetHeadingText}>
                 <Text style={styles.sheetTitle}>Recent updates</Text>
-                <Text style={styles.sheetSubtitle}>Queue and service activity</Text>
+                <Text style={styles.sheetSubtitle}>Your check-in and office updates</Text>
               </View>
               <View style={styles.sheetActions}>
                 <Pressable
@@ -811,6 +802,11 @@ const styles = StyleSheet.create({
   },
   noServicesText: {
     ...type.secondary,
+  },
+  emergencyNote: {
+    ...type.secondary,
+    fontSize: 12,
+    marginTop: spacing.md,
   },
   browseButton: {
     marginTop: spacing.md,

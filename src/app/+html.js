@@ -1,11 +1,15 @@
 import React from 'react';
-import { ScrollViewStyleReset } from 'expo-router/html';
+import { ScrollViewStyleReset, useServerDocumentContext } from 'expo-router/html';
 
 // Web only: the HTML document around the app during static rendering.
 // Native builds never use this file.
+// The app's scripts and styles arrive as headNodes/bodyNodes and must be
+// rendered here. Expo SDK 58 relies on this entirely: without them the page
+// never hydrates.
 export default function Root({ children }) {
+  const { htmlAttributes, bodyAttributes, headNodes, bodyNodes } = useServerDocumentContext();
   return (
-    <html lang="en">
+    <html lang="en" {...htmlAttributes}>
       <head>
         <meta charSet="utf-8" />
         <meta httpEquiv="X-UA-Compatible" content="IE=edge" />
@@ -13,8 +17,12 @@ export default function Root({ children }) {
         <meta name="theme-color" content="#000000" />
         <ScrollViewStyleReset />
         <style dangerouslySetInnerHTML={{ __html: globalStyles }} />
+        {headNodes}
       </head>
-      <body>{children}</body>
+      <body {...bodyAttributes}>
+        {children}
+        {bodyNodes}
+      </body>
     </html>
   );
 }

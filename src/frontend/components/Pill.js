@@ -19,7 +19,7 @@ export function PriorityMeter({ priority, showLabel = true }) {
     <View
       style={styles.meter}
       accessible
-      accessibilityLabel={`${tone.label} priority`}
+      accessibilityLabel={`Urgency: ${tone.label}`}
     >
       <View style={styles.bars}>
         {[1, 2, 3].map((n) => (
@@ -52,6 +52,14 @@ export function OpenPill({ isOpen }) {
   ) : (
     <Pill label="Closed" fg={colors.muted} border={colors.lineStrong} />
   );
+}
+
+// What a patient sees: open for check-in, full for today, or closed.
+export function AvailabilityPill({ service }) {
+  if (service.isOpen && service.waiting >= service.capacity) {
+    return <Pill label="Full today" fg={colors.accentText} border={colors.accent} />;
+  }
+  return <OpenPill isOpen={service.isOpen} />;
 }
 
 const styles = StyleSheet.create({
