@@ -111,6 +111,44 @@ What changed, in plain words. Newest work at the bottom.
     + Staff "Checked in" -> patient history shows "Minor Injury - Seen".
     + Duplicate visit type name -> server error shown under the name box.
 
-DEMO ACCOUNTS
-    Patient: patient@queuesmart.test / Patient#2026
-    Staff:   admin@queuesmart.test   / Admin#2026
+[18] SCOPED DOWN to my section: Admin Dashboard + Service Management
+    Teammates are building the other sections themselves, so their parts
+    of [3], [6], [8], [9], [12], [13] and [17] were taken back out.
+
+    KEPT (mine)
+    + Server: service create / edit / list / open-close / delete,
+      wait estimate, today's stats (GET /stats), input checking,
+      error messages, in-memory database with visit types and the
+      15 seeded patients (so the board has real waiting counts).
+    + App: front desk board (waiting counts + "Today" line),
+      visit types list, add/edit visit type form with server errors.
+    + start-all.bat, README run steps, design docs.
+
+    REMOVED (teammates' sections)
+    - Login, register, roles, tokens, demo accounts (auth).
+      Staff sign-in only checks the form again, like A2.
+      The service routes are open until auth adds the staff-only
+      check (marked TODO(auth)).
+    - Join / leave / call next / seen / no-show / move / remove /
+      Urgent (queue).
+    - Notifications and the fake SMS.
+    - Patient visit history on the server.
+
+    THEIR SCREENS
+    + Put back exactly as they were in A2 (same design). Only change:
+      shared constants now come from src/frontend/rules.js.
+    + Until each teammate connects their part, their screens open
+      with empty data, and check-in says
+      "Check-in is not connected to the server yet."
+
+    TESTS
+    + 6 files, 59 tests, all passing. Coverage about 99%.
+
+    CHECKED BY HAND in the browser
+    + Staff sign-in (any valid email + 8-char password) -> board shows
+      the server's waiting counts and wait estimates.
+    + Closing Lab Work stays closed on the server.
+    + Duplicate name -> server error under the name box.
+    + Created, edited (10 -> 15 min) and deleted a new visit type.
+    + Delete is blocked for Sick Visit (people in line).
+    + Patient screens and the staff line screen open with no errors.

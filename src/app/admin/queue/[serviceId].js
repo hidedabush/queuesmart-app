@@ -12,7 +12,7 @@
  */
 import { Stack, useLocalSearchParams } from 'expo-router';
 import { FlatList, StyleSheet, Text, View } from 'react-native';
-import { NO_SHOW_GRACE_MINUTES, displayName } from '../../../api/queue';
+import { NO_SHOW_GRACE_MINUTES, displayName } from '../../../frontend/rules';
 import Button from '../../../frontend/components/Button';
 import Pill from '../../../frontend/components/Pill';
 import { ToastProvider, useToast } from '../../../frontend/components/Toast';

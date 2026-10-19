@@ -1,29 +1,11 @@
 import request from 'supertest';
 import { createApp } from '../src/app.js';
-import { DEMO_ADMIN, DEMO_PATIENT } from '../src/database/seed.js';
-import { signToken } from '../src/api/services/authService.js';
+import * as db from '../src/database/db.js';
 
 export const app = createApp();
 
-// Tokens for the seeded accounts, signed directly (no slow password hash).
-export const adminToken = () => signToken({ userId: 'u-admin', role: 'admin' });
-export const patientToken = () => signToken({ userId: 'u-patient', role: 'user' });
-
-export const ADMIN = { id: 'u-admin', ...DEMO_ADMIN };
-export const PATIENT = { id: 'u-patient', ...DEMO_PATIENT };
-
-// supertest request with the Bearer header already set.
-export function as(token) {
-  const auth = (req) => req.set('Authorization', `Bearer ${token}`);
-  return {
-    get: (path) => auth(request(app).get(path)),
-    post: (path) => auth(request(app).post(path)),
-    patch: (path) => auth(request(app).patch(path)),
-    delete: (path) => auth(request(app).delete(path)),
-  };
-}
-
-export const anon = () => request(app);
+// supertest request against the app, without opening a port.
+export const api = () => request(app);
 
 export const validService = (overrides = {}) => ({
   name: 'Allergy Shots',
@@ -33,3 +15,26 @@ export const validService = (overrides = {}) => ({
   capacity: 12,
   ...overrides,
 });
+
+// Puts a patient in a line directly in the database. Joining through the API
+// belongs to the queue module, which a teammate is building.
+export function addToLine(serviceId, status = 'waiting') {
+  return db.insert('queueEntries', {
+    id: db.nextId('q'),
+    userId: 'u-test',
+    serviceId,
+    reason: 'Test visit',
+    status,
+    priority: 'normal',
+    order: 999,
+    arrivedAt: Date.now(),
+    calledAt: status === 'called' ? Date.now() : null,
+  });
+}
+
+// Removes everyone from a line directly in the database.
+export function clearLine(serviceId) {
+  db.all('queueEntries')
+    .filter((entry) => entry.serviceId === serviceId)
+    .forEach((entry) => db.remove('queueEntries', entry.id));
+}

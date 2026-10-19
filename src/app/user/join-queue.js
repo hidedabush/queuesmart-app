@@ -2,8 +2,7 @@ import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { FlatList, KeyboardAvoidingView, Platform, StyleSheet, Text, View } from 'react-native';
 
-import { EMERGENCY_NOTICE, REASON_MAX, validateReason } from '../../api/queue';
-import { formatWait } from '../../api/services';
+import { EMERGENCY_NOTICE, REASON_MAX, formatWait, validateReason } from '../../frontend/rules';
 
 import {
   useQueue,

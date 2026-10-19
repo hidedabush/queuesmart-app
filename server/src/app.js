@@ -1,14 +1,7 @@
 import cors from 'cors';
 import express from 'express';
 import { errorHandler, notFoundHandler } from './api/middleware/errors.js';
-import {
-  authRoutes,
-  historyRoutes,
-  notificationRoutes,
-  queueRoutes,
-  servicesRoutes,
-  statsRoutes,
-} from './api/routes/index.js';
+import { servicesRoutes, statsRoutes } from './api/routes/index.js';
 
 /**
  * The "Back-end / API [Application]" box. Built by a function so the tests
@@ -22,12 +15,9 @@ export function createApp() {
   app.use(express.json({ limit: '20kb' }));
 
   app.get('/health', (req, res) => res.json({ ok: true }));
-  app.use('/auth', authRoutes);
   app.use('/services', servicesRoutes);
-  app.use('/queue', queueRoutes);
-  app.use('/notifications', notificationRoutes);
-  app.use('/history', historyRoutes);
   app.use('/stats', statsRoutes);
+  // Teammates mount /auth, /queue, /notifications and /history here.
 
   app.use(notFoundHandler);
   app.use(errorHandler);

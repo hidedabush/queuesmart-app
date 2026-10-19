@@ -7,6 +7,10 @@ import * as servicesRepo from '../../database/repositories/servicesRepo.js';
  * the day went. Everything is read from history and the live line; nothing
  * extra is stored.
  */
+export function today(now = Date.now()) {
+  return new Date(now).toISOString().slice(0, 10);
+}
+
 export function statsForDate(date) {
   const rows = historyRepo.listByDate(date);
 

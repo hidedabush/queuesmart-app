@@ -12,8 +12,7 @@ import {
 } from 'react-native';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { EMERGENCY_NOTICE } from '../../api/queue';
-import { formatWait } from '../../api/services';
+import { EMERGENCY_NOTICE, formatWait } from '../../frontend/rules';
 import { checkInStatus, formatEstimate } from '../../frontend/checkInStatus';
 import Button from '../../frontend/components/Button';
 import { AvailabilityPill } from '../../frontend/components/Pill';
