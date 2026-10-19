@@ -504,8 +504,8 @@
  Every error, from any route, has this shape:
 
      HTTP 400  { "error": "validation",
-                 "fields": { "name": "Use 3-60 characters.",
-                             "expectedDuration": "Enter a whole number from 1 to 240." } }
+                 "fields": { "name": "Use 3-100 characters.",
+                             "expectedDuration": "Enter a whole number from 1 to 120." } }
      HTTP 401  { "error": "unauthenticated", "message": "..." }
      HTTP 403  { "error": "forbidden",       "message": "..." }
      HTTP 404  { "error": "not-found",       "message": "..." }
@@ -539,7 +539,8 @@
  6.2 src/api/*.js
      - services.js and queue.js keep the same function names; their bodies
        become request(...) calls.
-     - New: auth.js, notifications.js, history.js, stats.js.
+     - New: client.js, auth.js, notifications.js. getStats() lives in
+       services.js and listVisitHistory() in queue.js.
 
  6.3 src/frontend/state/ServicesStore.js
      - readAll() becomes async; change() awaits the call and then refreshes.

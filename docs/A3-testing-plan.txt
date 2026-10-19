@@ -55,32 +55,22 @@
  2. FOLDER LAYOUT
 -------------------------------------------------------------------------------
 
-   server/tests/
-     setup.js
-     helpers.js                 loginAs('admin' | 'patient') -> token,
-                                authed(request) -> supertest agent with a
-                                Bearer header, makeService(overrides)
+   server/tests/                (as built - 9 files, 131 tests)
+     setup.js                   resets db, outbox and SMS mock before each test
+     helpers.js                 adminToken(), patientToken(), as(token) ->
+                                supertest with a Bearer header, anon(),
+                                validService(overrides)
      unit/
-       rules.test.js            validation/rules.js
-       schemas.test.js          validation/schemas.js
-       officeRules.test.js      checkInBlocker, validateReason, displayName,
-                                patientStatus
-       waitEstimate.test.js
-       authService.test.js
-       servicesService.test.js
-       queueService.test.js
-       notifications.test.js    notifications/index.js + messages.js
-       smsGateway.test.js
-       historyService.test.js
-       statsService.test.js
-       db.test.js               db.js + repositories
+       validation.test.js       validation/rules.js, schemas.js, validate.js
+       rules-and-wait.test.js   officeRules.js + waitEstimate.js
+       authService.test.js      passwords, register, login, tokens
+       servicesService.test.js  visit type create/update/open/delete
+       queueService.test.js     join/leave, ordering, serve next, remove
+       notifications.test.js    triggers, dedupe, privacy, SMS mock, outbox
+       historyStats.test.js     history, statistics, in-memory db
+       errorHandler.test.js     409 and 500 error shapes
      integration/
-       auth.api.test.js
-       services.api.test.js
-       queue.api.test.js
-       notifications.api.test.js
-       history-stats.api.test.js
-       errors.api.test.js       404 route, malformed JSON, 500 handler
+       api.test.js              every route over HTTP (supertest)
 
 
 -------------------------------------------------------------------------------
@@ -98,14 +88,14 @@
      - isOpen: true/false pass; "true" and 1 fail
      - name: 42 fails ("Must be text.")
    length limits
-     - service name: 2 chars fail, 3 pass, 60 pass, 61 fail
-     - description: "" passes, 300 passes, 301 fails
+     - service name: 2 chars fail, 3 pass, 100 pass, 101 fail
+     - description: "" is missing (required), 300 passes, 301 fails
      - reason: 2 fail, 3 pass, 120 pass, 121 fail; whitespace trimmed first
      - person name: one word fails, "Ana Torres" passes, 81 chars fail
      - email: 254 passes, 255 fails
      - password: 7 fail, 8 pass, 64 pass, 65 fail
    ranges / enums
-     - expectedDuration: 0 fails, 1 passes, 240 passes, 241 fails
+     - expectedDuration: 0 fails, 1 passes, 120 passes, 121 fails
      - capacity: 0 fails, 1 passes, 50 passes, 51 fails; missing -> default 15
      - priority (service): low/medium/high pass; "urgent" and "HIGH" fail
      - priority (entry): normal/urgent pass; "high" fails

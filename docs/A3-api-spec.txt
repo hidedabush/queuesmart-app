@@ -24,6 +24,7 @@
    Auth            POST    /auth/register                    public  201
                    POST    /auth/login                       public  200
                    GET     /auth/me                          user    200
+                   PATCH   /auth/me/password                 user    204
    Services        GET     /services                         user    200
                    GET     /services/:id                     user    200
                    POST    /services                         admin   201
@@ -95,10 +96,9 @@
                                          1 digit, 1 symbol                       requirements."
    phone             string    no        exactly 10 digits after removing       "Enter a 10-digit phone number."
                                          spaces, dashes and parentheses
-   name (service)    string    yes       3-60 chars, unique ignoring case       "Use 3-60 characters."
-   description       string    yes*      0-300 chars (* key must be present,    "Keep it to 300 characters or fewer."
-                                         may be an empty string)
-   expectedDuration  integer   yes       1-240 (minutes)                        "Enter a whole number from 1 to 240."
+   name (service)    string    yes       3-100 chars, unique ignoring case      "Use 3-100 characters."
+   description       string    yes       1-300 chars                            "Keep it to 300 characters or fewer."
+   expectedDuration  integer   yes       1-120 (minutes; matches the A2 form)   "Enter a whole number from 1 to 120."
    priority (svc)    enum      yes       low | medium | high                    "Choose low, medium or high."
    capacity          integer   no        1-50, default 15                       "Enter a whole number from 1 to 50."
    isOpen            boolean   yes       true | false                           "Must be true or false."
@@ -144,6 +144,11 @@
    200       { user: { id, name, email, dob, phone, role } }
    401       unauthenticated
 
+ PATCH /auth/me/password                                                user
+   Body      { password }   (same strong-password rule as register)
+   204       (no body)
+   400       validation
+
 
 -------------------------------------------------------------------------------
  4. SERVICE MANAGEMENT
@@ -172,7 +177,7 @@
    Example (400)
      -> { "name": "X", "expectedDuration": "abc", "priority": "urgent" }
      <- 400 { "error": "validation", "fields": {
-                "name": "Use 3-60 characters.",
+                "name": "Use 3-100 characters.",
                 "description": "Description is required.",
                 "expectedDuration": "Must be a whole number.",
                 "priority": "Choose low, medium or high." } }
@@ -214,7 +219,9 @@
      arrivedAt, calledAt }
 
  LineEntry response shape (staff):
-   { id, userId, displayName,   // "Maria G." (privacy rule #8)
+   { id, userId,
+     patientName, dob,          // staff confirm these at the desk
+     displayName,               // "Maria G." for on-screen lists (privacy rule #8)
      reason, priority, status, order, arrivedAt, calledAt, position }
 
  --- Patient -----------------------------------------------------------------
@@ -311,7 +318,7 @@
  GET /stats                                                             admin
    Query     ?date=YYYY-MM-DD   (optional, default today; 400 if malformed)
    200       { date, services: [ { serviceId, name, currentlyWaiting,
-                                   served, noShows, cancelled,
+                                   served, noShows, cancelled, removed,
                                    averageWaitMinutes }, ... ] }
    Notes     averageWaitMinutes = mean of (calledAt - arrivedAt) for
              today's "seen" rows, or null when there are none.

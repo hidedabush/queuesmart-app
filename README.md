@@ -1,4 +1,4 @@
-# QueueSmart — Mobile App (Assignment 2)
+# QueueSmart — Mobile App + Backend (Assignment 3)
 
 React Native + Expo. Runs on Android and iOS from one codebase.
 
@@ -93,6 +93,32 @@ it means you're one folder too shallow (or too deep) — `cd` until `dir` /
 `ls` shows a `package.json` in the current folder, then run `npx expo start`
 from there.
 
+### Start the backend first (A3)
+
+The app gets all its data from the QueueSmart server in `server/`. Run it in
+a **second terminal** and leave it running:
+
+```bash
+cd server
+npm ci          # first time, and after server/package.json changes
+npm run dev     # API on http://localhost:4000, restarts when you save
+```
+
+Demo accounts (in-memory, reset every time the server restarts):
+
+| Role | Email | Password |
+|---|---|---|
+| Patient | `patient@queuesmart.test` | `Patient#2026` |
+| Front desk (admin) | `admin@queuesmart.test` | `Admin#2026` |
+
+The app finds the server on its own: on web it uses the same host on port
+4000, and in Expo Go it uses the laptop address from the QR code. If that
+does not work (for example with `--tunnel`), set the address yourself before
+`npx expo start`, e.g. `EXPO_PUBLIC_API_URL=http://192.168.1.20:4000`.
+
+Run the backend tests with `cd server && npm test`, or `npm run
+test:coverage` for the coverage report (`server/coverage/index.html`).
+
 A QR code appears in the terminal. On your phone, open the **Camera app**
 (iOS) or the **Expo Go** app (Android) and scan it, while your phone and
 laptop are on the same Wi-Fi. Press `a` for an Android emulator or `w` for
@@ -133,21 +159,25 @@ queuesmart-app/queuesmart-app/         the actual Expo project (package.json liv
       components/                Button.js, Field.js, Pill.js, QueueRow.js, Toast.js, ...
       hooks/useLayout.js         breakpoints
       state/ServicesStore.js     useServices() / useQueue() — what the screens read and call
-    api/                        API — the only thing the front end imports from the layers below
-      services.js                listServices, createService, updateService, ...
+    api/                        API CLIENT — the only code that talks to the server
+      client.js                  request(): base URL, Bearer token, error handling
+      auth.js                    register, login, changePassword
+      services.js                listServices, createService, updateService, getStats, ...
       queue.js                   checkIn, cancelCheckIn, callNext, resolveCalled, ...
-    backend/                    BACK END — business rules
-      officeRules.js             every office policy in one place (section 9)
-      servicesService.js         visit types
-      queueService.js            the waiting room: check-in, call, check in / no-show
-      waitEstimate.js            the wait-time model from A1
-    database/                   DATABASE — in-memory tables for A2
-      db.js                      all / find / insert / update / remove
-      seed.js                    starting rows: visit types, patients in line, visit history
-```
+      notifications.js           listNotifications, markRead, markAllRead
+  server/                       BACK END (A3) — separate Node + Express app, own package.json
+    src/
+      app.js                     the Express app; index.js starts it on port 4000
+      api/                       "Back-end / API" box: routes, controllers, middleware,
+                                 validation, business services (auth, services, queue,
+                                 wait estimate, history, stats, officeRules)
+      notifications/             "Notification component" box + MockSmsGateway ("SMS")
+      database/                  "Database [SQL]" box for now: in-memory tables + repositories
+    tests/                       Vitest unit + supertest API tests
+  docs/                         A3 proposal, API spec, testing plan, change log
 
-Calls only go downwards: **screens → frontend/state → api → backend → database**.
-A screen never imports from `backend/` or `database/`. The screens live in
+Calls only go downwards: **screens → frontend/state → src/api → (HTTP) → server**.
+A screen never calls the server directly; it uses the hooks in `ServicesStore.js`. The screens live in
 `src/app/` rather than inside `src/frontend/` because Expo Router requires
 the routes folder to be there.
 
@@ -216,12 +246,12 @@ adds these already — check before the first push, because committing
 
 ## 7. What is deliberately not here
 
-- No server, no network calls. `src/backend/` and `src/database/` run inside
-  the app and hold everything in memory, so data resets when the app reloads.
-  That is expected for A2. In A3 the function bodies in `src/api/` become
-  network requests and the screens stay as they are.
-- No authentication logic. The login screen validates input only.
-- No push notifications yet. In-app notification display is A2 scope.
+- No real database yet. The server keeps everything in memory, so data resets
+  when the server restarts (A4 replaces `server/src/database/repositories/`).
+- No real SMS. `MockSmsGateway` prints each text in the server terminal; the
+  same alerts show in the app's notification bell.
+- The app keeps your sign-in in memory only, so reloading the web page signs
+  you out.
 
 ---
 
@@ -273,9 +303,14 @@ Expo Go ships natively.
 
 ## 9. Provider office business rules
 
-All of these live in `src/backend/officeRules.js` (numbers and wording) and
-`src/backend/queueService.js` (enforcement). Change a rule there, not in a
-screen.
+All of these live in `server/src/api/services/officeRules.js` (numbers and
+wording) and `server/src/api/services/queueService.js` (enforcement). Change a
+rule there, not in a screen. `src/frontend/rules.js` keeps a copy of the
+numbers for instant form feedback; update it too.
+
+**New in A3:** staff can mark a waiting patient **Urgent**, which moves them
+ahead of everyone who is not urgent; patients of the same urgency stay in
+arrival order.
 
 | # | Rule | Where you see it |
 |---|---|---|

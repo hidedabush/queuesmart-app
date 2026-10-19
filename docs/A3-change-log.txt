@@ -1,0 +1,116 @@
+QUEUESMART - A3 CHANGE LOG
+What changed, in plain words. Newest work at the bottom.
+==========================================================
+
+[1] NEW: the backend server  (folder: server/)
+    + Added a separate Node + Express app that runs on port 4000.
+    + It has its own package.json, so it doesn't touch the Expo packages.
+    + Start it with:  cd server  ->  npm install  ->  npm run dev
+
+[2] NEW: in-memory "database"  (server/src/database/)
+    + db.js        stores 4 tables in memory: users, services, queueEntries, history
+    + seed.js      starting data: 5 visit types, 15 patients in line,
+                   1 demo patient, 1 demo admin
+    + repositories/  the only files that read/write the tables
+                     (in A4 we swap these for real SQL)
+
+[3] NEW: login and roles  (Authentication module)
+    + Register, login, "who am I", change password.
+    + Passwords are scrambled (hashed) and never stored as plain text.
+    + Login gives a token that lasts 8 hours.
+    + Two roles: "user" (patient) and "admin" (front desk).
+      Patients get "forbidden" if they try staff actions.
+
+[4] NEW: input checking  (Validation)
+    + Every request is checked for: required fields, the right type,
+      and length/number limits.
+    + Bad input returns 400 with a message for each wrong field.
+      Example: { "name": "Use 3-100 characters." }
+
+[5] MOVED: visit type rules  (Service management module)
+    + Create, edit, list, open/close, delete visit types on the server.
+    + Each has: name, description, expected duration, priority, capacity.
+    + Blocks duplicate names, capacity below the line, and deleting
+      a visit type while people are in line.
+
+[6] MOVED + IMPROVED: the waiting line  (Queue management module)
+    + Patients: join a line, leave a line, see their place.
+    + Staff: view the line, call next, mark seen / no-show, move, remove.
+    + NEW: staff can mark a patient "Urgent". Urgent patients go first;
+      everyone else stays in arrival order.
+
+[7] KEPT: wait-time estimate
+    + Same rule as before: people ahead x minutes per visit,
+      shown as a range (up to 30% longer).
+    + Now worked out by the server and sent to the app.
+
+[8] NEW: notifications  (server/src/notifications/)
+    + The server sends an alert when a patient:
+        - joins a line          ("you're checked in, #3 in line")
+        - is 2 or fewer from the front   ("head to the office")
+        - is called             ("it's your turn")
+    + Each alert is sent only once per check-in.
+    + Alerts never include the reason for the visit.
+    + Fake SMS: printed in the server terminal (no real texts are sent).
+
+[9] NEW: history and stats
+    + Every time someone leaves a line, a history row is saved
+      (seen / no-show / cancelled / removed).
+    + Patients see their own history.
+    + Staff see today's numbers: seen, no-shows, average wait.
+
+[10] NEW: tests  (server/tests/)
+    + 131 tests, all passing.
+    + Coverage is about 99% (the goal was 70-80%).
+    + Run:  cd server  ->  npm test   (or  npm run test:coverage)
+
+[11] CHANGED: the app now calls the server  (src/api/)
+    + NEW client.js: sends every request and finds the server address
+      by itself (or uses EXPO_PUBLIC_API_URL if you set it).
+    + services.js / queue.js: same function names, now they call the server.
+    + NEW auth.js and notifications.js.
+
+[12] CHANGED: shared app state  (src/frontend/state/ServicesStore.js)
+    + Remembers who is signed in.
+    + Reloads data from the server after every action
+      and every 5 seconds, so the patient sees their place move.
+
+[13] CHANGED: screens  (small edits only, same look)
+    + Login / Register / Staff login: really sign in now, and show
+      the server's error under the right box.
+    + Staff login refuses patient accounts.
+    + Check-in, cancel, call next, seen/no-show, move, remove: wait for
+      the server and show its message if something is blocked.
+    + Staff line screen: new "Urgent" / "Normal" button and Urgent tag.
+    + Patient bell: shows the server's notifications; swipe or
+      "Clear all" marks them read.
+    + Staff board: new "Today: X seen, Y no-shows, avg wait" line.
+    + Staff tabs: new "Sign out" button.
+    + Profile: "Update password" really changes it; "Log out" ends the session.
+    + Signed-out visitors to patient/staff pages go to the sign-in page.
+
+[14] MOVED: shared rules for the screens  (src/frontend/rules.js)
+    + A small copy of the rules the forms need for instant feedback
+      (reason length, 911 notice, "Maria G." names, wait text).
+    + The server still checks everything again.
+
+[15] REMOVED: old in-app backend
+    - Deleted src/backend/ and src/database/ (now in server/).
+
+[16] UPDATED: docs and settings
+    + README: how to start the server, demo accounts, new folders.
+    + docs/A3-api-spec.txt and docs/A3-testing-plan.txt match the code.
+    + .gitignore: ignores server/coverage/.
+
+[17] CHECKED BY HAND in the browser
+    + Wrong password -> error shown.  Right password -> dashboard.
+    + Patient checked in -> staff marked them Urgent -> they moved to #1.
+    + Staff called them -> patient screen changed to "It is your turn"
+      by itself (no refresh).
+    + Bell showed 3 alerts; "Clear all" emptied it.
+    + Staff "Checked in" -> patient history shows "Minor Injury - Seen".
+    + Duplicate visit type name -> server error shown under the name box.
+
+DEMO ACCOUNTS
+    Patient: patient@queuesmart.test / Patient#2026
+    Staff:   admin@queuesmart.test   / Admin#2026

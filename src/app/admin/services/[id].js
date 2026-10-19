@@ -20,9 +20,11 @@ import { PriorityMeter } from '../../../frontend/components/Pill';
 import { useToast } from '../../../frontend/components/Toast';
 import { contentWidth, useLayout } from '../../../frontend/hooks/useLayout';
 import { colors, fonts, layout, priorityLevels, radius, spacing, touch, type } from '../../../frontend/theme';
-import { DEFAULT_CAPACITY, MAX_CAPACITY } from '../../../api/services';
+import { DEFAULT_CAPACITY, MAX_CAPACITY } from '../../../frontend/rules';
 
+const MIN_NAME = 3;
 const MAX_NAME = 100;
+const MAX_DESCRIPTION = 300;
 const MAX_DURATION = 120; // two hours; a longer walk-in visit is a data-entry mistake
 const PRIORITIES = ['low', 'medium', 'high'];
 const DURATION_PRESETS = [5, 10, 15, 20, 30, 45];
@@ -108,12 +110,16 @@ export default function ServiceForm() {
     const trimmedName = values.name.trim();
     if (!trimmedName) {
       next.name = 'Enter a visit type name.';
+    } else if (trimmedName.length < MIN_NAME) {
+      next.name = `Use at least ${MIN_NAME} characters.`;
     } else if (trimmedName.length > MAX_NAME) {
       next.name = `Keep the name to ${MAX_NAME} characters or fewer.`;
     }
 
     if (!values.description.trim()) {
       next.description = 'Describe what this visit type is for.';
+    } else if (values.description.trim().length > MAX_DESCRIPTION) {
+      next.description = `Keep it to ${MAX_DESCRIPTION} characters or fewer.`;
     }
 
     if (!values.duration.trim()) {
@@ -154,7 +160,26 @@ export default function ServiceForm() {
     setErrors(validate({ name, description, duration, priority, capacity, ...patch }));
   }
 
-  function handleSave() {
+  // The server checks every field again. Its field names match the form's,
+  // except expectedDuration, which is the "duration" field here.
+  function showServerErrors(result) {
+    const fields = result.fields ?? {};
+    const found = {
+      ...(fields.name && { name: fields.name }),
+      ...(fields.description && { description: fields.description }),
+      ...(fields.expectedDuration && { duration: fields.expectedDuration }),
+      ...(fields.priority && { priority: fields.priority }),
+      ...(fields.capacity && { capacity: fields.capacity }),
+      ...(result.error === 'name-taken' && { name: result.message }),
+      ...(result.error === 'capacity-below-waiting' && { capacity: result.message }),
+    };
+    setErrors(found);
+    const first = FIELD_ORDER.find((key) => found[key]);
+    if (first) refs[first].current?.focus();
+    else toast(result.message);
+  }
+
+  async function handleSave() {
     const values = { name, description, duration, priority, capacity };
     const found = validate(values);
     setSubmitted(true);
@@ -174,23 +199,30 @@ export default function ServiceForm() {
       capacity: Number(capacity),
     };
 
-    if (isNew) {
-      createService(draft);
-      toast(`${draft.name} created`);
-    } else {
-      updateService(id, draft);
-      toast('Changes saved');
+    const result = isNew ? await createService(draft) : await updateService(id, draft);
+    if (result.error) {
+      showServerErrors(result);
+      return;
     }
+    toast(isNew ? `${draft.name} created` : 'Changes saved');
     leave();
   }
 
-  function confirmDelete() {
+  async function confirmDelete() {
     const deletedName = existing.name;
-    if (deleteService(id)?.error) {
-      toast(`${deletedName} still has patients in line`);
+    // Set before the call: the list refreshes before it returns, and this
+    // keeps the closing form from flashing "not found".
+    deleted.current = true;
+    const result = await deleteService(id);
+    if (result.error) {
+      deleted.current = false;
+      toast(
+        result.error === 'patients-in-line'
+          ? `${deletedName} still has patients in line`
+          : result.message
+      );
       return;
     }
-    deleted.current = true;
     leave();
     toast(`${deletedName} deleted`);
   }
@@ -264,6 +296,7 @@ export default function ServiceForm() {
               }}
               error={errors.description}
               multiline
+              maxLength={MAX_DESCRIPTION}
               helper="Shown to patients choosing a visit type, so list symptoms or needs in plain words."
               placeholder="e.g. Fever, cough, sore throat, ear pain, and other new symptoms."
             />

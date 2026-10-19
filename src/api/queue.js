@@ -1,64 +1,54 @@
-import * as queue from '../backend/queueService';
+import { request } from './client';
 
 // Queue API: the signed-in patient's check-in, and the front desk's view of
-// each line. See services.js for how this layer is meant to change in A3.
+// each line. See docs/A3-api-spec.txt section 5.
 
-// GET /queue/me
-export function getActiveQueue() {
-  return queue.getActiveQueue();
+// GET /queue/me  -> the patient's check-in with live position, or null
+export async function getActiveQueue() {
+  return (await request('GET', '/queue/me')).entry;
 }
 
 // POST /services/:id/queue  { reason }
-export function checkIn(serviceId, patient, reason) {
-  return queue.checkIn(serviceId, patient, reason);
+export async function checkIn(serviceId, reason) {
+  return { entry: (await request('POST', `/services/${serviceId}/queue`, { reason })).entry };
 }
 
 // DELETE /queue/me
 export function cancelCheckIn() {
-  return queue.cancelCheckIn();
+  return request('DELETE', '/queue/me');
 }
 
-// GET /queue/me/history
-export function listVisitHistory() {
-  return queue.listVisitHistory();
+// GET /history/me
+export async function listVisitHistory() {
+  return (await request('GET', '/history/me')).history;
 }
 
-// GET /services/:id/queue  (staff only)
-export function listQueue(serviceId) {
-  return queue.listQueue(serviceId);
-}
-
-// GET /services/:id/queue/called  (staff only)
-export function getCalled(serviceId) {
-  return queue.getCalled(serviceId);
+// GET /services/:id/queue  -> { called, waiting }  (staff only)
+export function getLine(serviceId) {
+  return request('GET', `/services/${serviceId}/queue`);
 }
 
 // POST /services/:id/queue/call  (staff only)
-export function callNext(serviceId) {
-  return queue.callNext(serviceId);
+export async function callNext(serviceId) {
+  return { entry: (await request('POST', `/services/${serviceId}/queue/call`)).called };
 }
 
 // POST /services/:id/queue/called  { outcome: 'seen' | 'no-show' }  (staff only)
-export function resolveCalled(serviceId, outcome) {
-  return queue.resolveCalled(serviceId, outcome);
+export async function resolveCalled(serviceId, outcome) {
+  return (await request('POST', `/services/${serviceId}/queue/called`, { outcome })).resolved;
 }
 
 // PATCH /queue/:entryId  { direction }  (staff only)
 export function moveEntry(serviceId, entryId, direction) {
-  return queue.moveEntry(serviceId, entryId, direction);
+  return request('PATCH', `/queue/${entryId}`, { direction });
+}
+
+// PATCH /queue/:entryId  { priority: 'normal' | 'urgent' }  (staff only)
+export function setEntryPriority(entryId, priority) {
+  return request('PATCH', `/queue/${entryId}`, { priority });
 }
 
 // DELETE /queue/:entryId  (staff only)
 export function removeEntry(entryId) {
-  return queue.removeEntry(entryId);
+  return request('DELETE', `/queue/${entryId}`);
 }
-
-// Office policy shared with the screens.
-export {
-  EMERGENCY_NOTICE,
-  HEAD_IN_AHEAD,
-  NO_SHOW_GRACE_MINUTES,
-  REASON_MAX,
-  displayName,
-  validateReason,
-} from '../backend/officeRules';

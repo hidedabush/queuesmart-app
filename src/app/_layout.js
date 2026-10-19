@@ -1,9 +1,10 @@
-import { DarkTheme, Stack, ThemeProvider } from 'expo-router';
+import { DarkTheme, Stack, ThemeProvider, useRootNavigationState, useRouter, useSegments } from 'expo-router';
+import { useEffect } from 'react';
 import { getFocusedRouteNameFromRoute } from 'expo-router/react-navigation';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { ToastProvider } from '../frontend/components/Toast';
-import { ServicesProvider } from '../frontend/state/ServicesStore';
+import { ServicesProvider, useServices } from '../frontend/state/ServicesStore';
 import { colors, headerOptions } from '../frontend/theme';
 
 // Navigation chrome (headers, tab bar, borders) picks these up by default.
@@ -20,6 +21,25 @@ const navigationTheme = {
   },
 };
 
+// Patient and staff screens need a signed-in account (the server would
+// refuse their requests anyway). Anyone signed out, including after their
+// session expires, goes back to the matching sign-in screen.
+function AuthGate() {
+  const { user } = useServices();
+  const segments = useSegments();
+  const router = useRouter();
+  const navigationReady = Boolean(useRootNavigationState()?.key);
+
+  useEffect(() => {
+    if (!navigationReady) return;
+    const area = segments[0];
+    if (!user && area === 'user') router.replace('/login');
+    if (area === 'admin' && user?.role !== 'admin') router.replace('/admin-login');
+  }, [navigationReady, router, segments, user]);
+
+  return null;
+}
+
 export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
@@ -27,6 +47,7 @@ export default function RootLayout() {
         <ServicesProvider>
           <ToastProvider>
             <StatusBar style="light" />
+            <AuthGate />
             <Stack
               screenOptions={{
                 ...headerOptions,
