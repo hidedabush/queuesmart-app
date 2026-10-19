@@ -8,8 +8,7 @@ import { colors, spacing, type } from '../frontend/theme';
 
 export default function LoginScreen() {
   const router = useRouter();
-  const { login } = useServices();
-  const [busy, setBusy] = useState(false);
+  const { setUserEmail } = useServices();
   const emailRef = useRef(null);
   const passwordRef = useRef(null);
   const [email, setEmail] = useState('');
@@ -38,8 +37,7 @@ export default function LoginScreen() {
     return Object.keys(nextErrors).length === 0;
   };
 
-  const handleLogin = async () => {
-    if (busy) return;
+  const handleLogin = () => {
     if (!validate()) {
       if (!email.trim() || !validateEmail(email)) {
         emailRef.current?.focus();
@@ -48,16 +46,8 @@ export default function LoginScreen() {
       }
       return;
     }
-    setBusy(true);
-    const result = await login(email.trim(), password);
-    setBusy(false);
-    if (result.error) {
-      // The server's own message: wrong password, or it could not be reached.
-      setErrors(result.fields ?? { password: result.message });
-      passwordRef.current?.focus();
-      return;
-    }
-    router.replace(result.user.role === 'admin' ? '/admin/dashboard' : '/user/dashboard');
+    setUserEmail(email.trim());
+    router.replace('/user/dashboard');
   };
 
   const handleEmailSubmit = () => {
@@ -144,7 +134,7 @@ export default function LoginScreen() {
           />
         </View>
 
-        <Button label={busy ? 'Signing in…' : 'Login'} onPress={handleLogin} disabled={busy} />
+        <Button label="Login" onPress={handleLogin} />
 
         <View style={styles.metaRow}>
           <Text style={type.secondary}>Don’t have an account?</Text>

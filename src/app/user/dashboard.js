@@ -106,20 +106,13 @@ function NotificationItem({ item, onDismiss }) {
   );
 }
 
-function timeAgo(timestamp) {
-  const minutes = Math.floor((Date.now() - timestamp) / 60_000);
-  if (minutes < 1) return 'Just now';
-  if (minutes < 60) return `${minutes} min ago`;
-  return `${Math.floor(minutes / 60)} h ago`;
-}
-
 export default function UserDashboard() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { services, notifications: inbox, markNotificationRead, markAllNotificationsRead } =
-    useServices();
+  const { services } = useServices();
   const { activeQueue } = useQueue();
   const [notificationsVisible, setNotificationsVisible] = useState(false);
+  const [dismissedNotifications, setDismissedNotifications] = useState([]);
   const sheetTranslateY = useMemo(() => new Animated.Value(0), []);
   const sheetPanResponder = useMemo(
     () => PanResponder.create({
@@ -161,29 +154,44 @@ export default function UserDashboard() {
   const openServices = services.filter((item) => item.isOpen);
   const queueStatus = activeQueue ? checkInStatus(activeQueue) : null;
 
-  // Sent by the server's Notification component when the patient checks
-  // in, gets close to the front, and is called. Unread ones show here;
-  // swiping one away marks it read on the server.
-  const notifications = useMemo(
-    () =>
-      inbox
-        .filter((item) => !item.read)
-        .map((item) => ({
-          id: item.id,
-          title: item.title,
-          message: item.message,
-          time: timeAgo(item.createdAt),
-          urgent: item.type !== 'joined',
-        })),
-    [inbox]
-  );
+  // Never includes the reason for the visit: notifications can show on a
+  // lock screen.
+  const notifications = useMemo(() => {
+    const items = [];
+
+    if (activeQueue && service) {
+      const status = checkInStatus(activeQueue);
+      items.push({
+        // Keyed by status so a new stage shows again after an old one was dismissed.
+        id: `check-in-${activeQueue.id}-${activeQueue.status}`,
+        title: `${service.name}: ${status.label}`,
+        message: status.message,
+        time: 'Just now',
+        urgent: status.urgent,
+      });
+    }
+
+    openServices.slice(0, activeQueue ? 1 : 2).forEach((item) => {
+      items.push({
+        id: `open-${item.id}`,
+        title: `${item.name}: walk-ins open`,
+        message: `${item.waiting} waiting · about ${formatWait(item)}.`,
+        time: 'Office update',
+        urgent: false,
+      });
+    });
+
+    return items.filter((item) => !dismissedNotifications.includes(item.id));
+  }, [activeQueue, dismissedNotifications, openServices, service]);
 
   const dismissNotification = (id) => {
-    markNotificationRead(id);
+    setDismissedNotifications((current) => [...current, id]);
   };
 
   const dismissAllNotifications = () => {
-    markAllNotificationsRead();
+    setDismissedNotifications((current) => [
+      ...new Set([...current, ...notifications.map((item) => item.id)]),
+    ]);
   };
 
   return (

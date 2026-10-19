@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import * as services from '../../src/api/services/servicesService.js';
-import * as queue from '../../src/api/services/queueService.js';
-import { validService } from '../helpers.js';
+import { addToLine, clearLine, validService } from '../helpers.js';
 
 const conflictCode = (code) => expect.objectContaining({ status: 409, code });
 
@@ -11,6 +10,11 @@ describe('service management', () => {
     expect(list).toHaveLength(5);
     const sick = list.find((s) => s.id === 's1');
     expect(sick).toMatchObject({ waiting: 6, hasCalled: false, estimatedWait: { low: 90, high: 117 } });
+  });
+
+  it('counts a called patient separately from the waiting ones', () => {
+    addToLine('s3', 'called');
+    expect(services.getService('s3')).toMatchObject({ waiting: 4, hasCalled: true });
   });
 
   it('creates an open visit type with the default capacity', () => {
@@ -46,14 +50,14 @@ describe('service management', () => {
 
   it('can only delete a visit type once its line is empty', () => {
     expect(() => services.deleteService('s2')).toThrow(conflictCode('patients-in-line'));
-    queue.getLineForStaff('s2').waiting.forEach((entry) => queue.removeEntry(entry.id));
+    clearLine('s2');
     services.deleteService('s2');
     expect(() => services.getService('s2')).toThrow(expect.objectContaining({ status: 404 }));
   });
 
   it('counts a called patient as still in line for delete', () => {
-    queue.getLineForStaff('s2').waiting.slice(1).forEach((entry) => queue.removeEntry(entry.id));
-    queue.callNext('s2');
+    clearLine('s2');
+    addToLine('s2', 'called');
     expect(() => services.deleteService('s2')).toThrow(conflictCode('patients-in-line'));
   });
 

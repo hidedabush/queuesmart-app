@@ -10,6 +10,9 @@ import { Platform } from 'react-native';
  *   1. EXPO_PUBLIC_API_URL, e.g. http://192.168.1.20:4000 (needed with --tunnel)
  *   2. web: the same host the page was loaded from, port 4000
  *   3. phone: the laptop running Expo (from the QR code's address), port 4000
+ *
+ * TODO(auth): the auth teammate adds the login token here and sends it as
+ * "Authorization: Bearer <token>" with every request.
  */
 const API_PORT = 4000;
 
@@ -25,17 +28,10 @@ function baseUrl() {
 
 export const API_URL = baseUrl();
 
-let token = null;
-
-// Set after login, cleared on logout. Sent as "Authorization: Bearer ...".
-export function setToken(next) {
-  token = next;
-}
-
 /**
  * An error response from the server. `code` is the server's error code
- * ('validation', 'full', 'name-taken', ...) and `fields` holds per-field
- * messages for a 400.
+ * ('validation', 'name-taken', ...) and `fields` holds per-field messages
+ * for a 400.
  */
 export class ApiError extends Error {
   constructor(status, body) {
@@ -54,7 +50,6 @@ export async function request(method, path, body) {
       headers: {
         Accept: 'application/json',
         ...(body !== undefined && { 'Content-Type': 'application/json' }),
-        ...(token && { Authorization: `Bearer ${token}` }),
       },
       body: body !== undefined ? JSON.stringify(body) : undefined,
     });

@@ -95,8 +95,15 @@ from there.
 
 ### Start the app and the backend (A3)
 
-The app gets all its data from the QueueSmart server in `server/`. The
-easiest way to start both is the batch file in the project root:
+**A3 status.** Only **Service Management** and the **Admin Dashboard** run on
+the QueueSmart server in `server/` so far. Login, check-in, the front desk's
+waiting line, notifications and visit history are being built by their
+owners; until then their screens open with empty data or a "not connected to
+the server yet" message, and sign-in only checks the form (as in A2). The full
+plan for every module is in `docs/`.
+
+The easiest way to start the app and the server together is the batch file in
+the project root:
 
 .\start-all.bat
 
@@ -115,12 +122,8 @@ npm run dev     # API on http://localhost:4000, restarts when you save
 
 Then run `npx expo start` in a second terminal from the project root.
 
-Demo accounts (in-memory, reset every time the server restarts):
-
-| Role               | Email                     | Password       |
-| ------------------ | ------------------------- | -------------- |
-| Patient            | `patient@queuesmart.test` | `Patient#2026` |
-| Front desk (admin) | `admin@queuesmart.test`   | `Admin#2026`   |
+To try Service Management: open _Office staff sign in_, type any valid email
+and an 8+ character password, and you land on the front desk board.
 
 The app finds the server on its own: on web it uses the same host on port
 4000, and in Expo Go it uses the laptop address from the QR code. If that
@@ -171,18 +174,16 @@ queuesmart-app/queuesmart-app/         the actual Expo project (package.json liv
       hooks/useLayout.js         breakpoints
       state/ServicesStore.js     useServices() / useQueue() — what the screens read and call
     api/                        API CLIENT — the only code that talks to the server
-      client.js                  request(): base URL, Bearer token, error handling
-      auth.js                    register, login, changePassword
+      client.js                  request(): server address and error handling
       services.js                listServices, createService, updateService, getStats, ...
-      queue.js                   checkIn, cancelCheckIn, callNext, resolveCalled, ...
-      notifications.js           listNotifications, markRead, markAllRead
+      queue.js                   placeholder: the queue teammate builds it (docs/A3-api-spec.txt §5)
   server/                       BACK END (A3) — separate Node + Express app, own package.json
     src/
       app.js                     the Express app; index.js starts it on port 4000
       api/                       "Back-end / API" box: routes, controllers, middleware,
-                                 validation, business services (auth, services, queue,
-                                 wait estimate, history, stats, officeRules)
-      notifications/             "Notification component" box + MockSmsGateway ("SMS")
+                                 validation, business services (services, wait estimate,
+                                 stats, officeRules). Teammates add auth, queue, history,
+                                 and the notifications/ folder here.
       database/                  "Database [SQL]" box for now: in-memory tables + repositories
     tests/                       Vitest unit + supertest API tests
   docs/                         A3 proposal, API spec, testing plan, change log
@@ -260,10 +261,11 @@ adds these already — check before the first push, because committing
 
 - No real database yet. The server keeps everything in memory, so data resets
   when the server restarts (A4 replaces `server/src/database/repositories/`).
-- No real SMS. `MockSmsGateway` prints each text in the server terminal; the
-  same alerts show in the app's notification bell.
-- The app keeps your sign-in in memory only, so reloading the web page signs
-  you out.
+- No auth on the server yet. The service endpoints are open until the auth
+  module adds the staff-only check (marked `TODO(auth)` in
+  `server/src/api/routes/index.js`).
+- The queue, notification and history modules are not on the server yet (see
+  "A3 status" in section 3).
 
 ---
 
@@ -315,14 +317,10 @@ Expo Go ships natively.
 
 ## 9. Provider office business rules
 
-All of these live in `server/src/api/services/officeRules.js` (numbers and
-wording) and `server/src/api/services/queueService.js` (enforcement). Change a
-rule there, not in a screen. `src/frontend/rules.js` keeps a copy of the
-numbers for instant form feedback; update it too.
-
-**New in A3:** staff can mark a waiting patient **Urgent**, which moves them
-ahead of everyone who is not urgent; patients of the same urgency stay in
-arrival order.
+Capacity rules live in `server/src/api/services/officeRules.js`; the
+check-in and queue rules move there when the queue module is built. For now
+the screens read the numbers and wording from `src/frontend/rules.js`. Change
+a rule there, not in a screen.
 
 | #   | Rule                                                                                                                                                                                                 | Where you see it                 |
 | --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------- |
@@ -340,8 +338,8 @@ arrival order.
 Registration asks for **full legal name and date of birth**, the two
 identifiers the front desk checks against a photo ID.
 
-**To demo the whole loop** in one session (data is in memory, so don't reload
-the page): register a patient → check in for _Minor Injury_ → Profile › Log out
+**To demo the whole loop** (once the queue and history modules are on the
+server): register a patient → check in for _Minor Injury_ → Profile › Log out
 → _Office staff sign in_ → open _Minor Injury_ → call next until the patient
 is called → back out to the patient sign-in and log in again: the dashboard
 says _It is your turn_ → back to staff → _Checked in_ → the patient's visit

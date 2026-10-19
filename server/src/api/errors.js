@@ -15,11 +15,7 @@ export class AppError extends Error {
 export const validationError = (fields) =>
   new AppError(400, 'validation', 'Some fields need attention.', fields);
 
-export const unauthenticated = (message = 'Sign in to continue.') =>
-  new AppError(401, 'unauthenticated', message);
-
-export const forbidden = (message = 'Only front-desk staff can do that.') =>
-  new AppError(403, 'forbidden', message);
+// The auth teammate adds 401 (unauthenticated) and 403 (forbidden) helpers here.
 
 export const notFound = (message = 'Not found.') => new AppError(404, 'not-found', message);
 

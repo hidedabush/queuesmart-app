@@ -55,22 +55,23 @@
  2. FOLDER LAYOUT
 -------------------------------------------------------------------------------
 
-   server/tests/                (as built - 9 files, 131 tests)
-     setup.js                   resets db, outbox and SMS mock before each test
-     helpers.js                 adminToken(), patientToken(), as(token) ->
-                                supertest with a Bearer header, anon(),
-                                validService(overrides)
+   server/tests/                (as built so far - Service Management and
+                                 Admin Dashboard only: 6 files, 59 tests)
+     setup.js                   resets the in-memory db before each test
+     helpers.js                 api() -> supertest, validService(overrides),
+                                addToLine() / clearLine() to set up a line
+                                directly in the db
      unit/
        validation.test.js       validation/rules.js, schemas.js, validate.js
-       rules-and-wait.test.js   officeRules.js + waitEstimate.js
-       authService.test.js      passwords, register, login, tokens
+       waitEstimate.test.js     waitEstimate.js
        servicesService.test.js  visit type create/update/open/delete
-       queueService.test.js     join/leave, ordering, serve next, remove
-       notifications.test.js    triggers, dedupe, privacy, SMS mock, outbox
-       historyStats.test.js     history, statistics, in-memory db
+       historyStats.test.js     statistics + in-memory db
        errorHandler.test.js     409 and 500 error shapes
      integration/
-       api.test.js              every route over HTTP (supertest)
+       api.test.js              /health, errors, /services, /stats over HTTP
+
+   Teammates add the planned auth, queue, notification and history test
+   files (sections 3.2, 3.4, 3.6, 3.7 below) with their modules.
 
 
 -------------------------------------------------------------------------------

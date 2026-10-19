@@ -38,16 +38,8 @@ function formatDob(dob) {
 
 function QueueScreen() {
   const { serviceId } = useLocalSearchParams();
-  const {
-    getService,
-    getServiceQueue,
-    getCalled,
-    callNext,
-    resolveCalled,
-    moveEntry,
-    setEntryPriority,
-    removeEntry,
-  } = useServices();
+  const { getService, getServiceQueue, getCalled, callNext, resolveCalled, moveEntry, removeEntry } =
+    useServices();
   const { gutter } = useLayout();
   const toast = useToast();
   const service = getService(serviceId);
@@ -65,18 +57,14 @@ function QueueScreen() {
     );
   }
 
-  async function handleCallNext() {
-    const result = await callNext(serviceId);
-    if (result.error) toast(result.message);
-    else toast(`Calling ${displayName(result.entry.patientName)} to the front desk.`);
+  function handleCallNext() {
+    const { entry } = callNext(serviceId);
+    if (entry) toast(`Calling ${displayName(entry.patientName)} to the front desk.`);
   }
 
-  async function handleResolve(outcome) {
-    const entry = await resolveCalled(serviceId, outcome);
-    if (entry.error) {
-      toast(entry.message);
-      return;
-    }
+  function handleResolve(outcome) {
+    const entry = resolveCalled(serviceId, outcome);
+    if (!entry) return;
     toast(
       outcome === 'seen'
         ? `${displayName(entry.patientName)} checked in.`
@@ -84,37 +72,16 @@ function QueueScreen() {
     );
   }
 
-  async function move(index, direction) {
+  function move(index, direction) {
     const entry = queue[index];
-    const target = queue[index + direction];
-    // Moves never jump an urgent patient; triage is the way to reorder across levels.
-    if (!target || target.priority !== entry.priority) {
-      toast('Urgent patients stay ahead. Change urgency to move past them.');
-      return;
-    }
-    const result = await moveEntry(serviceId, entry.id, direction);
-    if (result.error) toast(result.message);
-    else toast(`${displayName(entry.patientName)} moved to position ${index + 1 + direction}.`);
+    moveEntry(serviceId, entry.id, direction);
+    toast(`${displayName(entry.patientName)} moved to position ${index + 1 + direction}.`);
   }
 
-  async function toggleUrgent(index) {
+  function remove(index) {
     const entry = queue[index];
-    const next = entry.priority === 'urgent' ? 'normal' : 'urgent';
-    const result = await setEntryPriority(entry.id, next);
-    if (result.error) toast(result.message);
-    else
-      toast(
-        next === 'urgent'
-          ? `${displayName(entry.patientName)} marked urgent and moved ahead.`
-          : `${displayName(entry.patientName)} is back in arrival order.`
-      );
-  }
-
-  async function remove(index) {
-    const entry = queue[index];
-    const result = await removeEntry(entry.id);
-    if (result.error) toast(result.message);
-    else toast(`${displayName(entry.patientName)} was taken out of line.`);
+    removeEntry(entry.id);
+    toast(`${displayName(entry.patientName)} was taken out of line.`);
   }
 
   return (
@@ -204,18 +171,16 @@ function QueueScreen() {
           onUp={() => move(index, -1)}
           onDown={() => move(index, 1)}
           onRemove={() => remove(index)}
-          onToggleUrgent={() => toggleUrgent(index)}
         />
       )}
     />
   );
 }
 
-function Entry({ entry, position, isFirst, isLast, onUp, onDown, onRemove, onToggleUrgent }) {
+function Entry({ entry, position, isFirst, isLast, onUp, onDown, onRemove }) {
   const name = displayName(entry.patientName);
   // Status follows position, so it can never go stale after a reorder.
   const upNext = position === 1;
-  const urgent = entry.priority === 'urgent';
 
   return (
     <View style={styles.row}>
@@ -229,9 +194,6 @@ function Entry({ entry, position, isFirst, isLast, onUp, onDown, onRemove, onTog
             {entry.reason}
           </Text>
         </View>
-        {urgent ? (
-          <Pill label="Urgent" fg={colors.accentText} border={colors.accent} />
-        ) : null}
         {upNext ? (
           <Pill label="Up next" fg={colors.accentText} border={colors.accent} bg={colors.accentSoft} />
         ) : (
@@ -255,17 +217,6 @@ function Entry({ entry, position, isFirst, isLast, onUp, onDown, onRemove, onTog
           disabled={isLast}
           onPress={onDown}
           accessibilityHint={`Moves ${name} down one place`}
-        />
-        <Button
-          label={urgent ? 'Normal' : 'Urgent'}
-          variant="secondary"
-          size="sm"
-          onPress={onToggleUrgent}
-          accessibilityHint={
-            urgent
-              ? `Puts ${name} back in arrival order`
-              : `Moves ${name} ahead of patients who are not urgent`
-          }
         />
         <Button
           label="Remove"

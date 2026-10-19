@@ -1,22 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import {
-  checkType,
-  isIsoDate,
-  normalizePhone,
-  parseDob,
-} from '../../src/api/validation/rules.js';
+import { checkType, isIsoDate, matches, minLength } from '../../src/api/validation/rules.js';
 import * as schemas from '../../src/api/validation/schemas.js';
 import { validateBody } from '../../src/api/validation/validate.js';
 
 const chars = (n) => 'a'.repeat(n);
 const fieldsOf = (schema, body) => validateBody(schema, body).errors;
-
-const goodRegister = {
-  name: 'Ana Torres',
-  dob: '03/14/1995',
-  email: 'Ana@Example.com',
-  password: 'Queue#2026',
-};
 
 const goodService = {
   name: 'Allergy Shots',
@@ -38,6 +26,11 @@ describe('type checks', () => {
     expect(checkType('boolean', 'true')).toBe('Must be true or false.');
     expect(checkType('string', 42)).toBe('Must be text.');
   });
+
+  it('reports a type error through a schema', () => {
+    expect(fieldsOf(schemas.serviceCreate, { ...goodService, name: 42 }).name).toBe('Must be text.');
+    expect(fieldsOf(schemas.serviceOpen, { isOpen: 'no' }).isOpen).toBe('Must be true or false.');
+  });
 });
 
 describe('required fields', () => {
@@ -50,21 +43,21 @@ describe('required fields', () => {
 
   it('treats null, empty and whitespace-only strings as missing', () => {
     for (const blank of [null, '', '   ']) {
-      expect(fieldsOf(schemas.joinQueue, { reason: blank }).reason).toBe(
-        'Tell us briefly why you are coming in.'
+      expect(fieldsOf(schemas.serviceCreate, { ...goodService, name: blank }).name).toBe(
+        'Enter a visit type name.'
       );
     }
   });
 
-  it('uses the default for a missing optional field', () => {
-    const { value, errors } = validateBody(schemas.register, goodRegister);
+  it('capacity is optional', () => {
+    const { value, errors } = validateBody(schemas.serviceCreate, goodService);
     expect(errors).toEqual({});
-    expect(value.phone).toBeNull();
+    expect(value).not.toHaveProperty('capacity');
   });
 
   it('ignores a body that is not an object', () => {
-    expect(Object.keys(fieldsOf(schemas.joinQueue, ['x']))).toEqual(['reason']);
-    expect(Object.keys(fieldsOf(schemas.joinQueue, undefined))).toEqual(['reason']);
+    expect(Object.keys(fieldsOf(schemas.serviceOpen, ['x']))).toEqual(['isOpen']);
+    expect(Object.keys(fieldsOf(schemas.serviceOpen, undefined))).toEqual(['isOpen']);
   });
 });
 
@@ -87,24 +80,11 @@ describe('length limits', () => {
     expect(Boolean(errors.description)).toBe(!ok);
   });
 
-  it.each([
-    [2, 'Use at least 3 characters.'],
-    [3, undefined],
-    [120, undefined],
-    [121, 'Keep it to 120 characters or fewer.'],
-  ])('reason of %i chars -> %s', (n, message) => {
-    expect(fieldsOf(schemas.joinQueue, { reason: chars(n) }).reason).toBe(message);
-  });
-
-  it('trims the reason before measuring it', () => {
-    expect(validateBody(schemas.joinQueue, { reason: '  ab  ' }).errors.reason).toBe(
-      'Use at least 3 characters.'
-    );
-  });
-
-  it('limits email to 254 characters', () => {
-    const long = `${chars(250)}@a.co`;
-    expect(fieldsOf(schemas.register, { ...goodRegister, email: long }).email).toMatch(/254/);
+  it('trims text before measuring it', () => {
+    const { value, errors } = validateBody(schemas.serviceCreate, { ...goodService, name: '  ab  ' });
+    expect(errors.name).toBe('Use 3-100 characters.');
+    expect(validateBody(schemas.serviceCreate, { ...goodService, name: ' Lab ' }).value.name).toBe('Lab');
+    expect(value).not.toHaveProperty('name');
   });
 });
 
@@ -129,72 +109,11 @@ describe('ranges and enums', () => {
     expect(Boolean(errors.capacity)).toBe(!ok);
   });
 
-  it('only allows low, medium or high for service priority', () => {
+  it('only allows low, medium or high for priority', () => {
     expect(fieldsOf(schemas.serviceCreate, { ...goodService, priority: 'urgent' }).priority).toBe(
       'Choose low, medium or high.'
     );
     expect(fieldsOf(schemas.serviceCreate, { ...goodService, priority: 'HIGH' }).priority).toBeDefined();
-  });
-
-  it('only allows seen or no-show as an outcome', () => {
-    expect(fieldsOf(schemas.resolveCalled, { outcome: 'done' }).outcome).toBe('Choose seen or no-show.');
-    expect(fieldsOf(schemas.resolveCalled, { outcome: 'no-show' })).toEqual({});
-  });
-});
-
-describe('formats', () => {
-  it('checks email format and stores it lower-case', () => {
-    for (const bad of ['a@b', 'a b@c.com', '@c.com']) {
-      expect(fieldsOf(schemas.register, { ...goodRegister, email: bad }).email).toBe(
-        'Enter a valid email address.'
-      );
-    }
-    expect(validateBody(schemas.register, goodRegister).value.email).toBe('ana@example.com');
-  });
-
-  it('needs a first and last name', () => {
-    expect(fieldsOf(schemas.register, { ...goodRegister, name: 'Cher' }).name).toBe(
-      'Enter your first and last name.'
-    );
-  });
-
-  it('parses a real date of birth', () => {
-    expect(parseDob('02/29/2024')).toBe('2024-02-29');
-    expect(parseDob('02/29/2025')).toBeNull();
-    expect(parseDob('13/01/2000')).toBeNull();
-    expect(parseDob('1990-01-01')).toBeNull();
-    expect(parseDob('01/01/2999')).toBeNull();
-    expect(parseDob('01/01/1880')).toBeNull();
-  });
-
-  it('stores the date of birth as YYYY-MM-DD', () => {
-    expect(validateBody(schemas.register, goodRegister).value.dob).toBe('1995-03-14');
-  });
-
-  it('accepts common phone formats and rejects the wrong length', () => {
-    expect(normalizePhone('(713) 555-0101')).toBe('7135550101');
-    expect(fieldsOf(schemas.register, { ...goodRegister, phone: '713-555-0101' })).toEqual({});
-    expect(fieldsOf(schemas.register, { ...goodRegister, phone: '713555010' }).phone).toBeDefined();
-    expect(fieldsOf(schemas.register, { ...goodRegister, phone: '71355501011' }).phone).toBeDefined();
-  });
-
-  it.each([
-    ['queue#2026', 'no uppercase'],
-    ['QUEUE#2026', 'no lowercase'],
-    ['Queue#Smart', 'no digit'],
-    ['Queue2026', 'no symbol'],
-    ['Qu#1', 'too short'],
-    [`Q#1${chars(62)}`, 'too long'],
-  ])('rejects password %s (%s)', (password) => {
-    expect(fieldsOf(schemas.register, { ...goodRegister, password }).password).toBe(
-      'Password does not meet all requirements.'
-    );
-  });
-
-  it('recognises real ISO dates only', () => {
-    expect(isIsoDate('2026-10-19')).toBe(true);
-    expect(isIsoDate('2026-02-30')).toBe(false);
-    expect(isIsoDate('10/19/2026')).toBe(false);
   });
 });
 
@@ -208,16 +127,35 @@ describe('partial updates and combined rules', () => {
     expect(fieldsOf(schemas.serviceUpdate, { expectedDuration: 0 }).expectedDuration).toBeDefined();
   });
 
-  it('an entry update needs exactly one of direction or priority', () => {
-    expect(fieldsOf(schemas.updateEntry, {}).body).toBeDefined();
-    expect(fieldsOf(schemas.updateEntry, { direction: 1, priority: 'urgent' }).body).toBeDefined();
-    expect(fieldsOf(schemas.updateEntry, { direction: 1 })).toEqual({});
-    expect(fieldsOf(schemas.updateEntry, { direction: 2 }).direction).toBe('Direction must be -1 or 1.');
-    expect(fieldsOf(schemas.updateEntry, { priority: 'high' }).priority).toBe('Choose normal or urgent.');
+  it('drops fields the schema does not know about', () => {
+    const { value } = validateBody(schemas.serviceOpen, { isOpen: true, isAdmin: true });
+    expect(value).toEqual({ isOpen: true });
   });
 
-  it('drops fields the schema does not know about', () => {
-    const { value } = validateBody(schemas.joinQueue, { reason: 'Flu shot', isAdmin: true });
-    expect(value).toEqual({ reason: 'Flu shot' });
+  it('runs transforms, defaults and cross-field checks', () => {
+    const schema = {
+      fields: {
+        code: { type: 'string', required: true, message: 'Code?', rules: [], transform: (v) => v.toUpperCase() },
+        note: { type: 'string', required: false, rules: [], default: null },
+      },
+      refine: (value) => (value.code === 'BAD' ? { code: 'Not allowed.' } : null),
+    };
+    expect(validateBody(schema, { code: 'ok' })).toEqual({ value: { code: 'OK', note: null }, errors: {} });
+    expect(validateBody(schema, { code: 'bad' }).errors).toEqual({ code: 'Not allowed.' });
+  });
+});
+
+describe('other rules', () => {
+  it('minLength and matches', () => {
+    expect(minLength(3, 'short')('ab')).toBe('short');
+    expect(minLength(3, 'short')('abc')).toBeNull();
+    expect(matches(/^\d+$/, 'digits')('12a')).toBe('digits');
+    expect(matches(/^\d+$/, 'digits')('12')).toBeNull();
+  });
+
+  it('recognises real ISO dates only', () => {
+    expect(isIsoDate('2026-10-19')).toBe(true);
+    expect(isIsoDate('2026-02-30')).toBe(false);
+    expect(isIsoDate('10/19/2026')).toBe(false);
   });
 });
