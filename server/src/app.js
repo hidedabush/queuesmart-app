@@ -1,7 +1,7 @@
 import cors from 'cors';
 import express from 'express';
 import { errorHandler, notFoundHandler } from './api/middleware/errors.js';
-import { servicesRoutes, statsRoutes } from './api/routes/index.js';
+import { patientQueueRoutes, patientServiceQueueRoutes, servicesRoutes, statsRoutes } from './api/routes/index.js';
 
 /**
  * The "Back-end / API [Application]" box. Built by a function so the tests
@@ -16,7 +16,9 @@ export function createApp() {
 
   app.get('/health', (req, res) => res.json({ ok: true }));
   app.use('/services', servicesRoutes);
+  app.use('/services', patientServiceQueueRoutes);
   app.use('/stats', statsRoutes);
+  app.use('/queue', patientQueueRoutes);
   // Teammates mount /auth, /queue, /notifications and /history here.
 
   app.use(notFoundHandler);

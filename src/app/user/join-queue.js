@@ -48,6 +48,7 @@ export default function JoinQueue() {
   const [choosingId, setChoosingId] = useState(null);
   const [reason, setReason] = useState('');
   const [reasonError, setReasonError] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
   const activeService = activeQueue ? services.find((s) => s.id === activeQueue.serviceId) : null;
 
   useEffect(() => {
@@ -65,25 +66,44 @@ export default function JoinQueue() {
   }, [selectedServiceIndex]);
 
   function startCheckIn(service) {
+    if (submitting) return;
+
     setChoosingId(service.id);
     setReason('');
     setReasonError(null);
   }
 
-  function confirmCheckIn(service) {
+  async function confirmCheckIn(service) {
     const error = validateReason(reason);
+
     if (error) {
       setReasonError(error);
       return;
     }
-    const result = checkIn(service.id, reason);
-    if (result.error) {
-      setReasonError(result.message ?? 'This visit type just became unavailable. Choose another.');
-      return;
+
+    setSubmitting(true);
+    setReasonError(null);
+
+    try {
+      const result = await checkIn(service.id, reason);
+
+      if (result?.error) {
+        setReasonError(
+          result.message ??
+            'This visit type is currently unavailable. Please try again.'
+        );
+        return;
+      }
+
+      setChoosingId(null);
+      router.push('/user/queue-status');
+    } catch {
+      setReasonError('Unable to check in right now. Please try again.');
+    } finally {
+      setSubmitting(false);
     }
-    setChoosingId(null);
-    router.push('/user/queue-status');
   }
+
 
   return (
     <KeyboardAvoidingView
@@ -174,6 +194,7 @@ export default function JoinQueue() {
                     <Field
                       label="Reason for visit"
                       value={reason}
+                      editable={!submitting}
                       onChangeText={(text) => {
                         setReason(text);
                         if (reasonError) setReasonError(validateReason(text));
@@ -191,11 +212,13 @@ export default function JoinQueue() {
                       <Button
                         label="Cancel"
                         variant="secondary"
+                        disabled={submitting}
                         onPress={() => setChoosingId(null)}
                         style={styles.formButton}
                       />
                       <Button
-                        label="Confirm check-in"
+                        label={submitting ? 'Checking in…' : 'Confirm check-in'}
+                        disabled={submitting}
                         onPress={() => confirmCheckIn(item)}
                         style={styles.formButton}
                       />

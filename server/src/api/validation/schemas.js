@@ -74,3 +74,16 @@ export const serviceOpen = {
     isOpen: { type: 'boolean', required: true, message: 'isOpen is required.', rules: [] },
   },
 };
+
+export const joinQueue = {
+  fields: {
+    reason: {
+      type: 'string',
+      required: true,
+      message: 'Enter a reason for your visit.',
+      rules: [
+        length(3, 120, 'Use 3-120 characters for your visit reason.'),
+      ],
+    },
+  },
+};

@@ -1,6 +1,28 @@
-// Queue API: the patient's check-in and the front desk's view of each line.
-//
-// Owned by the queue teammate. Build it on request() from ./client against
-// docs/A3-api-spec.txt section 5, then replace the placeholders in
-// src/frontend/state/ServicesStore.js.
-export {};
+
+import { request } from './client';
+
+// Create a check-in for the selected visit type.
+export async function checkIn(serviceId, reason) {
+  const data = await request(
+    'POST',
+    `/services/${encodeURIComponent(serviceId)}/queue`,
+    { reason }
+  );
+
+  return data.entry;
+}
+
+// Retrieve the signed-in patient's active check-in.
+// The server returns null when the patient is not in a queue.
+export async function getMyQueue() {
+  const data = await request('GET', '/queue/me');
+
+  return data.entry;
+}
+
+// Cancel the signed-in patient's active check-in.
+// The server responds with HTTP 204 and no response body.
+export async function cancelCheckIn() {
+  await request('DELETE', '/queue/me');
+}
+
