@@ -3,6 +3,8 @@ import * as services from '../controllers/servicesController.js';
 import * as stats from '../controllers/statsController.js';
 import { validate } from '../middleware/validate.js';
 import * as schemas from '../validation/schemas.js';
+import { patientQueueRoutes } from './patientQueueRoutes.js';
+import { patientServiceQueueRoutes } from './patientServiceQueueRoutes.js';
 
 /**
  * Routes built so far: Service Management and the Admin Dashboard's
@@ -25,3 +27,6 @@ export const servicesRoutes = Router()
 
 // Admin dashboard: today's statistics
 export const statsRoutes = Router().get('/', stats.stats); // admin
+
+// Patient queue: current check-in and cancellation.
+export { patientQueueRoutes, patientServiceQueueRoutes };

@@ -1,4 +1,5 @@
 import { Stack, useRouter } from 'expo-router';
+import { useState } from 'react';
 import { Alert, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import {
@@ -19,7 +20,7 @@ import {
 export default function QueueStatus() {
   const router = useRouter();
   const { services } = useServices();
-  const { activeQueue, cancelCheckIn } = useQueue();
+  const { activeQueue, queueLoading, queueError, refreshMyQueue, cancelCheckIn } = useQueue();
 
   const service = activeQueue
     ? services.find(
@@ -36,9 +37,31 @@ export default function QueueStatus() {
     else router.replace('/user/join-queue');
   }
 
-  function confirmCancel() {
-    cancelCheckIn();
-    goToCheckIn();
+  const [cancelling, setCancelling] = useState(false);
+  const [cancelError, setCancelError] = useState(null);
+
+  async function confirmCancel() {
+    setCancelling(true);
+    setCancelError(null);
+
+    try {
+      const result = await cancelCheckIn();
+
+      if (result?.error) {
+        setCancelError(
+          result.message ?? 'Unable to cancel your check-in.'
+        );
+        return;
+      }
+
+      goToCheckIn();
+    } catch {
+      setCancelError(
+        'Unable to cancel your check-in. Please try again.'
+      );
+    } finally {
+      setCancelling(false);
+    }
   }
 
   function handleCancel() {
@@ -47,13 +70,15 @@ export default function QueueStatus() {
 
     // Alert.alert with buttons is a no-op on react-native-web.
     if (Platform.OS === 'web') {
-      if (window.confirm(`${title}\n\n${message}`)) confirmCancel();
+      if (window.confirm(`${title}\n\n${message}`)) {
+        void confirmCancel();
+      }
       return;
     }
 
     Alert.alert(title, message, [
       { text: 'Keep my place', style: 'cancel' },
-      { text: 'Cancel check-in', style: 'destructive', onPress: confirmCancel },
+      { text: 'Cancel check-in', style: 'destructive', onPress: () => void confirmCancel(), },
     ]);
   }
 
@@ -65,7 +90,23 @@ export default function QueueStatus() {
         Your check-in
       </Text>
 
-      {!activeQueue || !service ? (
+      {queueLoading && !activeQueue ? (
+        <Text style={styles.empty}>
+          Checking your check-in status…
+        </Text>
+      ) : queueError && !activeQueue ? (
+        <>
+          <Text style={styles.empty}>
+            We could not retrieve your check-in status. Please try again.
+          </Text>
+
+          <Button
+            label="Retry"
+            onPress={() => void refreshMyQueue()}
+            style={{ marginTop: spacing.xl }}
+          />
+        </>
+      ) : !activeQueue ? (
         <>
           <Text style={styles.empty}>
             You are not checked in for a visit right now.
@@ -77,6 +118,11 @@ export default function QueueStatus() {
             style={{ marginTop: spacing.xl }}
           />
         </>
+      ) : !service ? (
+        <Text style={styles.empty}>
+          Your check-in was found, but its visit type could not be loaded.
+          Please try again shortly.
+        </Text>
       ) : (
         <View style={[styles.card, status.urgent && styles.cardUrgent]}>
           <Text style={type.heading}>
@@ -119,9 +165,19 @@ export default function QueueStatus() {
             will confirm your name and date of birth.
           </Text>
 
+          {cancelError ? (
+            <Text
+              style={styles.description}
+              accessibilityLiveRegion="polite"
+            >
+              {cancelError}
+            </Text>
+          ) : null}
+
           <Button
-            label="Cancel check-in"
+            label={cancelling ? 'Cancelling…' : 'Cancel check-in'}
             variant="danger"
+            disabled={cancelling}
             onPress={handleCancel}
             style={{ marginTop: spacing.xl }}
           />
