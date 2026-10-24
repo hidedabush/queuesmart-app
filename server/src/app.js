@@ -3,6 +3,7 @@ import express from 'express';
 import { errorHandler, notFoundHandler } from './api/middleware/errors.js';
 import { patientQueueRoutes, patientServiceQueueRoutes, servicesRoutes, statsRoutes } from './api/routes/index.js';
 import { authRoutes } from './api/routes/authRoutes.js';
+import { historyRoutes } from './api/routes/historyRoutes.js';
 
 /**
  * The "Back-end / API [Application]" box. Built by a function so the tests
@@ -21,7 +22,8 @@ export function createApp() {
   app.use('/services', patientServiceQueueRoutes);
   app.use('/stats', statsRoutes);
   app.use('/queue', patientQueueRoutes);
-  // Teammates mount /auth, /queue, /notifications and /history here.
+    app.use('/history', historyRoutes);
+  // Teammates mount /notifications here.
 
   app.use(notFoundHandler);
   app.use(errorHandler);
