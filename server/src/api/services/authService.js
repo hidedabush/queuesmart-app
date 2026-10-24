@@ -10,6 +10,7 @@ import * as userRepo from '../../database/repositories/userRepo.js';
 import {
   emailTaken,
   invalidCredentials,
+  unauthenticated,
 } from '../errors.js';
 
 const scrypt = promisify(scryptCallback);
@@ -116,12 +117,7 @@ export async function login(input) {
 
   return {
     token: createToken(user),
-    user: {
-      id: user.id,
-      name: user.name,
-      email: user.email,
-      role: user.role,
-    },
+    user: publicUser(user),
   };
 }
 
@@ -129,7 +125,7 @@ export function getCurrentUser(userId) {
   const user = userRepo.findById(userId);
 
   if (!user) {
-    throw invalidCredentials();
+    throw unauthenticated();
   }
 
   return {
@@ -141,7 +137,7 @@ export async function changePassword(userId, password) {
   const user = userRepo.findById(userId);
 
   if (!user) {
-    throw invalidCredentials();
+    throw unauthenticated();
   }
 
   const passwordHash = await hashPassword(password);
