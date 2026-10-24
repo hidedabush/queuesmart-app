@@ -42,6 +42,13 @@ export class ApiError extends Error {
   }
 }
 
+let authToken = null;
+
+// Called by the store after sign-in and sign-out.
+export function setAuthToken(token) {
+  authToken = token;
+}
+
 export async function request(method, path, body) {
   let response;
   try {
@@ -49,6 +56,7 @@ export async function request(method, path, body) {
       method,
       headers: {
         Accept: 'application/json',
+        ...(authToken && { Authorization: `Bearer ${authToken}` }),
         ...(body !== undefined && { 'Content-Type': 'application/json' }),
       },
       body: body !== undefined ? JSON.stringify(body) : undefined,
