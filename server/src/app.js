@@ -4,6 +4,7 @@ import { errorHandler, notFoundHandler } from './api/middleware/errors.js';
 import { patientQueueRoutes, patientServiceQueueRoutes, servicesRoutes, statsRoutes } from './api/routes/index.js';
 import { authRoutes } from './api/routes/authRoutes.js';
 import { historyRoutes } from './api/routes/historyRoutes.js';
+import { staffQueueRoutes, staffServiceQueueRoutes } from './api/routes/staffQueueRoutes.js';
 
 /**
  * The "Back-end / API [Application]" box. Built by a function so the tests
@@ -22,8 +23,13 @@ export function createApp() {
   app.use('/services', patientServiceQueueRoutes);
   app.use('/stats', statsRoutes);
   app.use('/queue', patientQueueRoutes);
-    app.use('/history', historyRoutes);
+  app.use('/history', historyRoutes);
   // Teammates mount /notifications here.
+  app.use('/services', patientServiceQueueRoutes);
+  app.use('/services', staffServiceQueueRoutes);
+  app.use('/stats', statsRoutes);
+  app.use('/queue', patientQueueRoutes);
+  app.use('/queue', staffQueueRoutes);
 
   app.use(notFoundHandler);
   app.use(errorHandler);

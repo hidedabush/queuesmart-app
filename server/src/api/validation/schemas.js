@@ -167,3 +167,15 @@ export const changePassword = {
     password: { type: 'string', required: true, message: 'Password is required.', rules: passwordRules },
   },
 };
+
+// Staff: how a called patient's visit ended.
+export const resolveCalled = {
+  fields: {
+    outcome: {
+      type: 'string',
+      required: true,
+      message: 'Choose seen or no-show.',
+      rules: [oneOf(['seen', 'no-show'], 'Choose seen or no-show.')],
+    },
+  },
+};
