@@ -1,6 +1,8 @@
 // Starting rows for the in-memory database: a primary-care provider office
 // that takes same-day walk-in visits. All names are fictional.
 
+import { scryptSync } from 'node:crypto';
+
 const SEED_SERVICES = [
   {
     id: 's1',
@@ -46,6 +48,32 @@ const SEED_SERVICES = [
     priority: 'low',
     capacity: 10,
     isOpen: false,
+  },
+];
+
+// Demo-only password hashes. Real accounts get a random salt at registration.
+function seedPasswordHash(password, salt) {
+  return `${salt}:${scryptSync(password, salt, 64).toString('hex')}`;
+}
+
+const SEED_USERS = [
+  {
+    id: 'u-admin',
+    name: 'QueueSmart Admin',
+    dob: '1980-01-01',
+    email: 'admin@queuesmart.test',
+    phone: null,
+    passwordHash: seedPasswordHash('Admin#2026', 'queuesmart-admin-seed'),
+    role: 'admin',
+  },
+  {
+    id: 'u-patient',
+    name: 'Demo Patient',
+    dob: '1995-03-14',
+    email: 'patient@queuesmart.test',
+    phone: '7135550101',
+    passwordHash: seedPasswordHash('Patient#2026', 'queuesmart-patient-seed'),
+    role: 'user',
   },
 ];
 
@@ -109,6 +137,18 @@ export function seedTables() {
   });
 
   return {
+    users: [
+      ...SEED_USERS.map((row) => ({ ...row })),
+      ...waitingRoom.map((_, index) => ({
+        id: `u-seed-${index + 1}`,
+        name: `Demo Patient ${index + 1}`,
+        dob: '1990-01-01',
+        email: `seed-patient-${index + 1}@queuesmart.test`,
+        phone: null,
+        passwordHash: null,
+        role: 'user',
+      })),
+    ],
     services: SEED_SERVICES.map((row) => ({ ...row })),
     queueEntries,
     history,
