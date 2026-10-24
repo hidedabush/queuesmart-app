@@ -1,3 +1,4 @@
+import jwt from 'jsonwebtoken';
 import express from 'express';
 import { beforeEach, describe, expect, it } from 'vitest';
 import request from 'supertest';
@@ -10,12 +11,22 @@ import { patientServiceQueueRoutes } from '../../src/api/routes/patientServiceQu
 // Test-only authentication stand-in. This verifies the controller's
 // req.user.id dependency; it does not replace real application auth.
 function createPatientQueueTestApp() {
-  const app = express();
+  process.env.JWT_SECRET = 'test-only-secret-for-queuesmart';
 
+  const app = express();
   app.use(express.json());
 
+  const token = jwt.sign(
+    { role: 'user' },
+    process.env.JWT_SECRET,
+    {
+      subject: 'u-patient-test',
+      expiresIn: '1h',
+    }
+  );
+
   app.use((req, res, next) => {
-    req.user = { id: 'u-patient-test' };
+    req.headers.authorization = `Bearer ${token}`;
     next();
   });
 
