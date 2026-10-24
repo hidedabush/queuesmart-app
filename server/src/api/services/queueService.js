@@ -2,6 +2,7 @@ import * as queueRepo from '../../database/repositories/queueRepo.js';
 import * as servicesRepo from '../../database/repositories/servicesRepo.js';
 import { conflict, notFound } from '../errors.js';
 import { estimateWait } from './waitEstimate.js';
+import { recordOutcome } from './historyService.js';
 
 // A patient may have only one active queue entry across all visit types.
 const ACTIVE_STATUSES = ['waiting', 'head-in', 'called'];
@@ -174,6 +175,9 @@ export function cancelQueue(userId) {
   if (!entry) {
     throw notFound('You do not have an active check-in to cancel.');
   }
+
+  // Row is written before the entry is removed so the row can copy its details.
+  recordOutcome(entry, 'cancelled');
 
   queueRepo.remove(entry.id);
 }
