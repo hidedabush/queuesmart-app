@@ -2,6 +2,7 @@ import cors from 'cors';
 import express from 'express';
 import { errorHandler, notFoundHandler } from './api/middleware/errors.js';
 import { patientQueueRoutes, patientServiceQueueRoutes, servicesRoutes, statsRoutes } from './api/routes/index.js';
+import { authRoutes } from './api/routes/authRoutes.js';
 
 /**
  * The "Back-end / API [Application]" box. Built by a function so the tests
@@ -15,6 +16,7 @@ export function createApp() {
   app.use(express.json({ limit: '20kb' }));
 
   app.get('/health', (req, res) => res.json({ ok: true }));
+  app.use('/auth', authRoutes);
   app.use('/services', servicesRoutes);
   app.use('/services', patientServiceQueueRoutes);
   app.use('/stats', statsRoutes);
