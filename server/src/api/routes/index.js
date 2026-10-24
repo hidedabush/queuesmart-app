@@ -5,6 +5,7 @@ import { validate } from '../middleware/validate.js';
 import * as schemas from '../validation/schemas.js';
 import { patientQueueRoutes } from './patientQueueRoutes.js';
 import { patientServiceQueueRoutes } from './patientServiceQueueRoutes.js';
+import { requireAuth, requireRole } from '../middleware/auth.js';
 
 /**
  * Routes built so far: Service Management and the Admin Dashboard's
@@ -17,16 +18,46 @@ import { patientServiceQueueRoutes } from './patientServiceQueueRoutes.js';
  */
 
 // 2. Service management
-export const servicesRoutes = Router()
-  .get('/', services.list)
-  .post('/', validate(schemas.serviceCreate), services.create) // admin
-  .get('/:id', services.get)
-  .patch('/:id', validate(schemas.serviceUpdate), services.update) // admin
-  .patch('/:id/open', validate(schemas.serviceOpen), services.setOpen) // admin
-  .delete('/:id', services.remove); // admin
 
-// Admin dashboard: today's statistics
-export const statsRoutes = Router().get('/', stats.stats); // admin
+// Service management
+export const servicesRoutes = Router()
+  .get('/', requireAuth, services.list)
+  .post(
+    '/',
+    requireAuth,
+    requireRole('admin'),
+    validate(schemas.serviceCreate),
+    services.create
+  )
+  .get('/:id', requireAuth, services.get)
+  .patch(
+    '/:id',
+    requireAuth,
+    requireRole('admin'),
+    validate(schemas.serviceUpdate),
+    services.update
+  )
+  .patch(
+    '/:id/open',
+    requireAuth,
+    requireRole('admin'),
+    validate(schemas.serviceOpen),
+    services.setOpen
+  )
+  .delete(
+    '/:id',
+    requireAuth,
+    requireRole('admin'),
+    services.remove
+  );
+
+// Admin dashboard statistics
+export const statsRoutes = Router().get(
+  '/',
+  requireAuth,
+  requireRole('admin'),
+  stats.stats
+);
 
 // Patient queue: current check-in and cancellation.
 export { patientQueueRoutes, patientServiceQueueRoutes };
