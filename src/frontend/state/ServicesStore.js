@@ -3,6 +3,7 @@ import { ApiError, setAuthToken } from '../../api/client';
 import * as authApi from '../../api/auth';
 import * as servicesApi from '../../api/services';
 import * as queueApi from '../../api/queue';
+import * as historyApi from '../../api/history'
 
 /**
  * Shared front-end state, so every screen renders from the same copy.
@@ -38,6 +39,7 @@ export function ServicesProvider({ children }) {
   const [connectionError, setConnectionError] = useState(null);
   const [patient, setPatientState] = useState(emptyPatient);
   const [role, setRole] = useState(null);
+  const [history, setHistory] = useState([]);
   const [activeQueue, setActiveQueue] = useState(null);
   const [queueLoading, setQueueLoading] = useState(true);
   const [queueError, setQueueError] = useState(null);
@@ -51,6 +53,7 @@ export function ServicesProvider({ children }) {
     setQueueLoading(true);
     setQueueError(null);
     setStats(null);
+    setHistory([]);
   }, []);
 
   // An expired or rejected token ends the session.
@@ -96,20 +99,32 @@ export function ServicesProvider({ children }) {
     }
   }, [lostSession]);
 
+  const refreshHistory = useCallback(async () => {
+    try {
+      setHistory(await historyApi.listMine());
+    } catch (error) {
+      if (!(error instanceof ApiError)) throw error;
+      lostSession(error);
+    }
+  }, [lostSession]);
+
   // Load once, then keep the board current. Only after sign-in.
   useEffect(() => {
     if (!role) return undefined;
 
     const poll = () => {
       refresh();
-      if (role === 'user') refreshMyQueue();
+      if (role === 'user') {
+        refreshMyQueue();
+        refreshHistory();
+      }
     };
 
     poll();
     const timer = setInterval(poll, POLL_MS);
 
     return () => clearInterval(timer);
-  }, [refresh, refreshMyQueue, role]);
+  }, [refresh, refreshHistory, refreshMyQueue, role]);
 
   const value = useMemo(() => {
     // Wraps a server call: on success re-read everything and return the
@@ -206,6 +221,7 @@ export function ServicesProvider({ children }) {
           setActiveQueue(null);
           setQueueError(null);
           await refresh();
+          await refreshHistory();
 
           return {};
         } catch (error) {
@@ -214,8 +230,8 @@ export function ServicesProvider({ children }) {
         }
       },
 
-      // History remains owned by the history teammate.
-      history: [],
+      // Connected to GET /history/me.
+      history,
 
       // Signed-in patient - auth teammate (kept in memory, as in A2)
       patient,
@@ -245,7 +261,7 @@ export function ServicesProvider({ children }) {
         }
       },
     };
-  }, [activeQueue, connectionError, patient, queueError, queueLoading, refresh, refreshMyQueue, services, stats, role, signOut]);
+  }, [activeQueue, connectionError, patient, queueError, queueLoading, refresh, refreshMyQueue, services, stats, role, signOut, history, refreshHistory]);
 
   return <ServicesContext.Provider value={value}>{children}</ServicesContext.Provider>;
 }
