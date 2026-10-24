@@ -1,5 +1,5 @@
 import { Stack, useRouter } from 'expo-router';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Button from '../frontend/components/Button';
 import Field from '../frontend/components/Field';
@@ -8,13 +8,20 @@ import { colors, spacing, type } from '../frontend/theme';
 
 export default function LoginScreen() {
   const router = useRouter();
-  const { setUserEmail } = useServices();
+  const { login, role } = useServices();
   const emailRef = useRef(null);
   const passwordRef = useRef(null);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [errors, setErrors] = useState({});
+  const [submitting, setSubmitting] = useState(false);
+  const [serverError, setServerError] = useState('');
+
+  // Move on once the server has accepted the login.
+  useEffect(() => {
+    if (role === 'user') router.replace('/user/dashboard');
+  }, [role, router]);
 
   const validateEmail = (value) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
 
@@ -37,7 +44,8 @@ export default function LoginScreen() {
     return Object.keys(nextErrors).length === 0;
   };
 
-  const handleLogin = () => {
+  const handleLogin = async () => {
+    if (submitting) return;
     if (!validate()) {
       if (!email.trim() || !validateEmail(email)) {
         emailRef.current?.focus();
@@ -46,8 +54,16 @@ export default function LoginScreen() {
       }
       return;
     }
-    setUserEmail(email.trim());
-    router.replace('/user/dashboard');
+    setServerError('');
+    setSubmitting(true);
+    const result = await login(email.trim(), password, 'user');
+    setSubmitting(false);
+    if (!result.error) return;
+    if (result.fields) {
+      setErrors((current) => ({ ...current, ...result.fields }));
+    } else {
+      setServerError(result.message);
+    }
   };
 
   const handleEmailSubmit = () => {
@@ -134,8 +150,8 @@ export default function LoginScreen() {
           />
         </View>
 
-        <Button label="Login" onPress={handleLogin} />
-
+        {serverError ? <Text style={styles.serverError}>{serverError}</Text> : null}
+        <Button label={submitting ? 'Signing in…' : 'Login'} onPress={handleLogin} />
         <View style={styles.metaRow}>
           <Text style={type.secondary}>Don’t have an account?</Text>
           <Pressable onPress={() => router.push('/register')} accessibilityRole="link">
@@ -255,5 +271,11 @@ const styles = StyleSheet.create({
     color: colors.accentText,
     fontSize: 22,
     fontWeight: '700',
+  },
+  serverError: {
+    color: colors.accentText,
+    fontSize: 13,
+    fontWeight: '600',
+    marginBottom: spacing.md,
   },
 });
