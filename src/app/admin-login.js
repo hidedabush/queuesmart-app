@@ -1,5 +1,6 @@
 import { Stack, useRouter } from 'expo-router';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useServices } from '../frontend/state/ServicesStore';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Button from '../frontend/components/Button';
 import Field from '../frontend/components/Field';
@@ -7,12 +8,20 @@ import { spacing, type } from '../frontend/theme';
 
 export default function AdminLoginScreen() {
   const router = useRouter();
+  const { login, role } = useServices();
   const emailRef = useRef(null);
   const passwordRef = useRef(null);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [errors, setErrors] = useState({});
+  const [submitting, setSubmitting] = useState(false);
+  const [serverError, setServerError] = useState('');
+
+  // Move on once the server has accepted the login.
+  useEffect(() => {
+    if (role === 'admin') router.replace('/admin/dashboard');
+  }, [role, router]);
 
   const validateEmail = (value) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
 
@@ -35,7 +44,8 @@ export default function AdminLoginScreen() {
     return Object.keys(nextErrors).length === 0;
   };
 
-  const handleLogin = () => {
+  const handleLogin = async () => {
+    if (submitting) return;
     if (!validate()) {
       if (!email.trim() || !validateEmail(email)) {
         emailRef.current?.focus();
@@ -44,7 +54,16 @@ export default function AdminLoginScreen() {
       }
       return;
     }
-    router.replace('/admin/dashboard');
+    setServerError('');
+    setSubmitting(true);
+    const result = await login(email.trim(), password, 'admin');
+    setSubmitting(false);
+    if (!result.error) return;
+    if (result.fields) {
+      setErrors((current) => ({ ...current, ...result.fields }));
+    } else {
+      setServerError(result.message);
+    }
   };
 
   const handleEmailSubmit = () => {
@@ -131,7 +150,8 @@ export default function AdminLoginScreen() {
           />
         </View>
 
-        <Button label="Staff sign in" onPress={handleLogin} />
+        {serverError ? <Text style={styles.serverError}>{serverError}</Text> : null}
+        <Button label={submitting ? 'Signing in…' : 'Staff sign in'} onPress={handleLogin} />
 
         <Pressable
           style={styles.backLink}
@@ -190,5 +210,11 @@ const styles = StyleSheet.create({
   backText: {
     color: '#A24A4A',
     fontWeight: '700',
+  },
+  serverError: {
+    color: '#FF4D5A',
+    fontSize: 13,
+    fontWeight: '600',
+    marginBottom: spacing.md,
   },
 });

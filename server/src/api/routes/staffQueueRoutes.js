@@ -1,14 +1,29 @@
 import { Router } from 'express';
-import * as queue from '../controllers/queueController.js';
+import * as staffQueue from '../controllers/staffQueueController.js';
+import { requireAuth, requireRole } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 import * as schemas from '../validation/schemas.js';
 
-// Front desk: work one visit type's line. All admin.
+// Mounted at /services, next to patientServiceQueueRoutes.
 export const staffServiceQueueRoutes = Router()
-  .get('/:id/queue', queue.line)
-  .post('/:id/queue/call', queue.callNext)
-  .post('/:id/queue/called', validate(schemas.resolveCalled), queue.resolveCalled);
+  .get('/:id/queue', requireAuth, requireRole('admin'), staffQueue.getLine)
+  .post('/:id/queue/call', requireAuth, requireRole('admin'), staffQueue.callNext)
+  .post(
+    '/:id/queue/called',
+    requireAuth,
+    requireRole('admin'),
+    validate(schemas.resolveCalled),
+    staffQueue.resolveCalled
+  );
 
+// Mounted at /queue AFTER patientQueueRoutes, so '/queue/me' is matched there
+// first instead of being read as an entry id.
 export const staffQueueRoutes = Router()
-  .patch('/:entryId', validate(schemas.entryUpdate), queue.updateEntry)
-  .delete('/:entryId', queue.removeEntry);
+  .patch(
+    '/:entryId',
+    requireAuth,
+    requireRole('admin'),
+    validate(schemas.entryUpdate),
+    staffQueue.moveEntry
+  )
+  .delete('/:entryId', requireAuth, requireRole('admin'), staffQueue.removeEntry);

@@ -1,11 +1,19 @@
 import * as db from '../db.js';
 
 // Visit history table. The admin dashboard's daily statistics read it; the
-// queue module writes a row every time a patient leaves a line. Reading a
-// patient's own history (GET /history/me) belongs to the history teammate.
+// history module writes a row every time a patient leaves a line and reads a
+// patient's own rows for GET /history/me.
 
 export function listByDate(date) {
   return db.all('history').filter((row) => row.date === date);
+}
+
+// Every row for one patient, newest first.
+export function listByUser(userId) {
+  return db
+    .all('history')
+    .filter((row) => row.userId === userId)
+    .sort((a, b) => b.leftAt - a.leftAt);
 }
 
 export function insert(row) {

@@ -1,5 +1,5 @@
 import { Stack, useRouter } from 'expo-router';
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Button from '../frontend/components/Button';
 import Field from '../frontend/components/Field';
@@ -32,7 +32,7 @@ function parseDob(value) {
 
 export default function RegisterScreen() {
   const router = useRouter();
-  const { setPatient } = useServices();
+  const { register, role } = useServices();
   const nameRef = useRef(null);
   const dobRef = useRef(null);
   const emailRef = useRef(null);
@@ -44,6 +44,13 @@ export default function RegisterScreen() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [errors, setErrors] = useState({});
+  const [submitting, setSubmitting] = useState(false);
+  const [serverError, setServerError] = useState('');
+
+  // Registering also signs in; move on once the store has the role.
+  useEffect(() => {
+    if (role === 'user') router.replace('/user/dashboard');
+  }, [role, router]);
 
   const passwordChecks = useMemo(
     () => passwordRules.map((rule) => ({ ...rule, met: rule.test(password) })),
@@ -89,10 +96,25 @@ export default function RegisterScreen() {
     return Object.keys(nextErrors).length === 0;
   };
 
-  const handleRegister = () => {
-    if (!validate()) return;
-    setPatient({ name: name.trim().replace(/\s+/g, ' '), dob: parseDob(dob), email: email.trim() });
-    router.replace('/user/dashboard');
+  const handleRegister = async () => {
+    if (submitting || !validate()) return;
+    setServerError('');
+    setSubmitting(true);
+    const result = await register({
+      name: name.trim().replace(/\s+/g, ' '),
+      dob: dob.trim(),
+      email: email.trim(),
+      password,
+    });
+    setSubmitting(false);
+    if (!result.error) return;
+    if (result.fields) {
+      setErrors((current) => ({ ...current, ...result.fields }));
+    } else if (result.error === 'email-taken') {
+      setErrors((current) => ({ ...current, email: result.message }));
+    } else {
+      setServerError(result.message);
+    }
   };
 
   const handleEmailSubmit = () => {
@@ -214,7 +236,7 @@ export default function RegisterScreen() {
             placeholder="Create a password"
             secureTextEntry
             textContentType="newPassword"
-            maxLength={128}
+            maxLength={64}
             helper="Use a strong password to protect your patient account."
             returnKeyType="next"
             inputRef={passwordRef}
@@ -245,7 +267,7 @@ export default function RegisterScreen() {
             placeholder="Re-enter your password"
             secureTextEntry
             textContentType="newPassword"
-            maxLength={128}
+            maxLength={64}
             helper={confirmPasswordStatus || 'Retype the same password to confirm.'}
             returnKeyType="done"
             blurOnSubmit={false}
@@ -255,7 +277,8 @@ export default function RegisterScreen() {
         </View>
 
         <View style={styles.buttonWrap}>
-          <Button label="Create account" onPress={handleRegister} />
+          {serverError ? <Text style={styles.serverError}>{serverError}</Text> : null}
+          <Button label={submitting ? 'Creating account…' : 'Create account'} onPress={handleRegister} />
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -326,5 +349,11 @@ const styles = StyleSheet.create({
   },
   buttonWrap: {
     marginTop: spacing.sm,
+  },
+  serverError: {
+    color: colors.accentText,
+    fontSize: 13,
+    fontWeight: '600',
+    marginBottom: spacing.md,
   },
 });

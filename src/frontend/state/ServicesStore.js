@@ -1,7 +1,9 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { ApiError } from '../../api/client';
+import { ApiError, setAuthToken } from '../../api/client';
+import * as authApi from '../../api/auth';
 import * as servicesApi from '../../api/services';
 import * as queueApi from '../../api/queue';
+import * as historyApi from '../../api/history';
 
 /**
  * Shared front-end state, so every screen renders from the same copy.
@@ -32,6 +34,8 @@ export function ServicesProvider({ children }) {
   const [stats, setStats] = useState(null);
   const [connectionError, setConnectionError] = useState(null);
   const [patient, setPatientState] = useState(emptyPatient);
+  const [role, setRole] = useState(null);
+  const [history, setHistory] = useState([]);
   const [activeQueue, setActiveQueue] = useState(null);
   const [queueLoading, setQueueLoading] = useState(true);
   const [queueError, setQueueError] = useState(null);
@@ -39,19 +43,42 @@ export function ServicesProvider({ children }) {
   const [lines, setLines] = useState({});
   const watchedLines = useRef(new Set());
 
+  // Forget the signed-in account and everything loaded for it.
+  const signOut = useCallback(() => {
+    setAuthToken(null);
+    setRole(null);
+    setPatientState(emptyPatient);
+    setActiveQueue(null);
+    setQueueLoading(true);
+    setQueueError(null);
+    setStats(null);
+    setHistory([]);
+    setLines({});
+  }, []);
+
+  // An expired or rejected token ends the session.
+  const lostSession = useCallback(
+    (error) => {
+      if (error instanceof ApiError && error.code === 'unauthenticated') signOut();
+    },
+    [signOut]
+  );
+
   const refresh = useCallback(async () => {
     try {
       const [nextServices, nextStats] = await Promise.all([
         servicesApi.listServices(),
-        servicesApi.getStats(),
+        // Statistics are admin-only; a patient would get a 403.
+        role === 'admin' ? servicesApi.getStats() : Promise.resolve(null),
       ]);
       setServices(nextServices);
       setStats(nextStats);
       setConnectionError(null);
     } catch (error) {
+      lostSession(error);
       setConnectionError(error.message);
     }
-  }, []);
+  }, [lostSession, role]);
 
   const refreshMyQueue = useCallback(async () => {
     setQueueLoading(true);
@@ -63,13 +90,14 @@ export function ServicesProvider({ children }) {
       return entry;
     } catch (error) {
       if (!(error instanceof ApiError)) throw error;
+      lostSession(error);
 
       setQueueError(error.message);
       return asFailure(error);
     } finally {
       setQueueLoading(false);
     }
-  }, []);
+  }, [lostSession]);
 
   // A failed read keeps the last line on screen; refresh() already reports
   // a server that can't be reached.
@@ -79,8 +107,9 @@ export function ServicesProvider({ children }) {
       setLines((current) => ({ ...current, [serviceId]: line }));
     } catch (error) {
       if (!(error instanceof ApiError)) throw error;
+      lostSession(error);
     }
-  }, []);
+  }, [lostSession]);
 
   const refreshLines = useCallback(
     () => Promise.all([...watchedLines.current].map(refreshLine)),
@@ -98,19 +127,33 @@ export function ServicesProvider({ children }) {
     [refreshLine]
   );
 
-  // Load once, then keep the board current.
-  useEffect(() => {
-    refresh();
-    refreshMyQueue();
+  const refreshHistory = useCallback(async () => {
+    try {
+      setHistory(await historyApi.listMine());
+    } catch (error) {
+      if (!(error instanceof ApiError)) throw error;
+      lostSession(error);
+    }
+  }, [lostSession]);
 
-    const timer = setInterval(() => {
+  // Load once, then keep the board current. Only after sign-in.
+  useEffect(() => {
+    if (!role) return undefined;
+
+    const poll = () => {
       refresh();
-      refreshMyQueue();
-      refreshLines();
-    }, POLL_MS);
+      if (role === 'user') {
+        refreshMyQueue();
+        refreshHistory();
+      }
+      if (role === 'admin') refreshLines();
+    };
+
+    poll();
+    const timer = setInterval(poll, POLL_MS);
 
     return () => clearInterval(timer);
-  }, [refresh, refreshLines, refreshMyQueue]);
+  }, [refresh, refreshHistory, refreshLines, refreshMyQueue, role]);
 
   const value = useMemo(() => {
     // Wraps a server call: on success re-read everything and return the
@@ -127,6 +170,32 @@ export function ServicesProvider({ children }) {
           return asFailure(error);
         }
       };
+    }
+
+    // Signs in and keeps the session. `expectedRole` stops a patient from
+    // using the staff screen (and the reverse) without storing a token.
+    async function signIn(email, password, expectedRole) {
+      try {
+        const { token, user } = await authApi.login({ email, password });
+
+        if (expectedRole && user.role !== expectedRole) {
+          return {
+            error: 'wrong-role',
+            message:
+              expectedRole === 'admin'
+                ? 'This account does not have staff access.'
+                : 'Staff accounts sign in from the office staff screen.',
+          };
+        }
+
+        setAuthToken(token);
+        setPatientState({ name: user.name, dob: user.dob ?? '', email: user.email });
+        setRole(user.role);
+        return { user };
+      } catch (error) {
+        if (!(error instanceof ApiError)) throw error;
+        return asFailure(error);
+      }
     }
 
     return {
@@ -181,6 +250,7 @@ export function ServicesProvider({ children }) {
           setActiveQueue(null);
           setQueueError(null);
           await refresh();
+          await refreshHistory();
 
           return {};
         } catch (error) {
@@ -189,26 +259,52 @@ export function ServicesProvider({ children }) {
         }
       },
 
-      // History remains owned by the history teammate.
-      history: [],
+      // Connected to GET /history/me.
+      history,
 
       // Signed-in patient - auth teammate (kept in memory, as in A2)
       patient,
       setPatient: (next) => setPatientState({ ...emptyPatient, ...next }),
       userEmail: patient.email,
       setUserEmail: (email) => setPatientState((current) => ({ ...current, email })),
+
+      // Auth (server)
+      role,
+      login: signIn,
+      register: async (draft) => {
+        try {
+          await authApi.register(draft);
+        } catch (error) {
+          if (!(error instanceof ApiError)) throw error;
+          return asFailure(error);
+        }
+        return signIn(draft.email, draft.password, 'user');
+      },
+      logout: signOut,
+      changePassword: async (password) => {
+        try {
+          return await authApi.changePassword(password);
+        } catch (error) {
+          if (!(error instanceof ApiError)) throw error;
+          return asFailure(error);
+        }
+      },
     };
   }, [
     activeQueue,
     connectionError,
+    history,
     lines,
     patient,
     queueError,
     queueLoading,
     refresh,
+    refreshHistory,
     refreshLines,
     refreshMyQueue,
+    role,
     services,
+    signOut,
     stats,
     watchLine,
   ]);
