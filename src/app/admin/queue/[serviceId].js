@@ -11,6 +11,7 @@
  * checks in from the app appears here and moves up as staff work the line.
  */
 import { Stack, useLocalSearchParams } from 'expo-router';
+import { useEffect } from 'react';
 import { FlatList, StyleSheet, Text, View } from 'react-native';
 import { NO_SHOW_GRACE_MINUTES, displayName } from '../../../frontend/rules';
 import Button from '../../../frontend/components/Button';
@@ -38,10 +39,20 @@ function formatDob(dob) {
 
 function QueueScreen() {
   const { serviceId } = useLocalSearchParams();
-  const { getService, getServiceQueue, getCalled, callNext, resolveCalled, moveEntry, removeEntry } =
-    useServices();
+  const {
+    getService,
+    watchLine,
+    getServiceQueue,
+    getCalled,
+    callNext,
+    resolveCalled,
+    moveEntry,
+    removeEntry,
+  } = useServices();
   const { gutter } = useLayout();
   const toast = useToast();
+  // Read this line from the server while the screen is open.
+  useEffect(() => watchLine(serviceId), [serviceId, watchLine]);
   const service = getService(serviceId);
   const queue = service ? getServiceQueue(serviceId) : [];
   const called = service ? getCalled(serviceId) : null;
@@ -57,14 +68,16 @@ function QueueScreen() {
     );
   }
 
-  function handleCallNext() {
-    const { entry } = callNext(serviceId);
-    if (entry) toast(`Calling ${displayName(entry.patientName)} to the front desk.`);
+  // Each action returns { error, message } when the server refuses it.
+  async function handleCallNext() {
+    const result = await callNext(serviceId);
+    if (result.error) return toast(result.message);
+    toast(`Calling ${displayName(result.entry.patientName)} to the front desk.`);
   }
 
-  function handleResolve(outcome) {
-    const entry = resolveCalled(serviceId, outcome);
-    if (!entry) return;
+  async function handleResolve(outcome) {
+    const entry = await resolveCalled(serviceId, outcome);
+    if (entry.error) return toast(entry.message);
     toast(
       outcome === 'seen'
         ? `${displayName(entry.patientName)} checked in.`
@@ -72,15 +85,20 @@ function QueueScreen() {
     );
   }
 
-  function move(index, direction) {
+  async function move(index, direction) {
     const entry = queue[index];
-    moveEntry(serviceId, entry.id, direction);
-    toast(`${displayName(entry.patientName)} moved to position ${index + 1 + direction}.`);
+    const line = await moveEntry(serviceId, entry.id, direction);
+    if (line.error) return toast(line.message);
+    // The server never moves a patient past a different priority level, so
+    // report where they actually ended up.
+    const position = line.findIndex((item) => item.id === entry.id) + 1;
+    toast(`${displayName(entry.patientName)} moved to position ${position}.`);
   }
 
-  function remove(index) {
+  async function remove(index) {
     const entry = queue[index];
-    removeEntry(entry.id);
+    const result = await removeEntry(entry.id);
+    if (result.error) return toast(result.message);
     toast(`${displayName(entry.patientName)} was taken out of line.`);
   }
 

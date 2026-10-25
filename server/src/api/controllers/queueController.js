@@ -24,3 +24,27 @@ export function cancelMine(req, res) {
 
   res.status(204).end();
 }
+
+// Staff (front desk) handlers.
+
+export function line(req, res) {
+  res.json(queueService.getLine(req.params.id));
+}
+
+export function callNext(req, res) {
+  res.json(queueService.callNext(req.params.id));
+}
+
+export function resolveCalled(req, res) {
+  res.json(queueService.resolveCalled(req.params.id, req.body.outcome));
+}
+
+export function updateEntry(req, res) {
+  res.json(queueService.updateEntry(req.params.entryId, req.body));
+}
+
+export function removeEntry(req, res) {
+  queueService.removeEntry(req.params.entryId);
+
+  res.status(204).end();
+}

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import * as db from '../../src/database/db.js';
 import { addToLine, api, clearLine, validService } from '../helpers.js';
 
 describe('health and errors', () => {
@@ -92,5 +93,87 @@ describe('statistics API', () => {
     expect(res.body.services).toHaveLength(5);
     expect((await api().get('/stats')).status).toBe(200);
     expect((await api().get('/stats?date=19-10-2026')).status).toBe(400);
+  });
+});
+
+describe('patient queue API on the real app', () => {
+  it('check-in, status and cancel reach the database and the live counts', async () => {
+    expect((await api().get('/queue/me')).body).toEqual({ entry: null });
+
+    const joined = await api().post('/services/s1/queue').send({ reason: 'New cough' });
+    expect(joined.status).toBe(201);
+    expect(joined.body.entry).toMatchObject({ serviceId: 's1', position: 7 });
+    expect((await api().get('/services/s1')).body.service.waiting).toBe(7);
+    expect((await api().get('/stats')).body.services[0].currentlyWaiting).toBe(7);
+
+    expect((await api().get('/queue/me')).body.entry.id).toBe(joined.body.entry.id);
+    expect((await api().delete('/queue/me')).status).toBe(204);
+    expect((await api().get('/services/s1')).body.service.waiting).toBe(6);
+  });
+});
+
+describe('staff queue API', () => {
+  it('works a line: view, reorder, triage, call, resolve and remove', async () => {
+    const line = await api().get('/services/s1/queue');
+    expect(line.status).toBe(200);
+    expect(line.body.called).toBeNull();
+    expect(line.body.waiting.map((entry) => entry.id)).toEqual([
+      'q-seed-1', 'q-seed-2', 'q-seed-3', 'q-seed-4', 'q-seed-5', 'q-seed-6',
+    ]);
+
+    const moved = await api().patch('/queue/q-seed-1').send({ direction: 1 });
+    expect(moved.status).toBe(200);
+    expect(moved.body.waiting[1].id).toBe('q-seed-1');
+
+    const triaged = await api().patch('/queue/q-seed-6').send({ priority: 'urgent' });
+    expect(triaged.body.waiting[0]).toMatchObject({ id: 'q-seed-6', priority: 'urgent' });
+
+    const called = await api().post('/services/s1/queue/call');
+    expect(called.status).toBe(200);
+    expect(called.body.called).toMatchObject({ id: 'q-seed-6', status: 'called' });
+    expect((await api().post('/services/s1/queue/call')).body.error).toBe('already-calling');
+    expect((await api().get('/services/s1')).body.service).toMatchObject({ hasCalled: true, waiting: 5 });
+
+    const resolved = await api().post('/services/s1/queue/called').send({ outcome: 'seen' });
+    expect(resolved.status).toBe(200);
+    expect(resolved.body.resolved.id).toBe('q-seed-6');
+    expect((await api().post('/services/s1/queue/called').send({ outcome: 'seen' })).body.error).toBe(
+      'nothing-called'
+    );
+
+    expect((await api().delete('/queue/q-seed-2')).status).toBe(204);
+    expect((await api().delete('/queue/q-seed-2')).status).toBe(404);
+
+    const stats = (await api().get('/stats')).body.services[0];
+    expect(stats).toMatchObject({ served: 1, removed: 1, currentlyWaiting: 4 });
+  });
+
+  it('a patient sees their own check-in move to called', async () => {
+    db.update('services', 's5', { isOpen: true });
+    await api().post('/services/s5/queue').send({ reason: 'Refill check' });
+    await api().post('/services/s5/queue/call');
+
+    expect((await api().get('/queue/me')).body.entry).toMatchObject({
+      serviceId: 's5',
+      status: 'called',
+      position: 0,
+    });
+  });
+
+  it('rejects bad bodies, an empty line and unknown ids', async () => {
+    const patch = (body) => api().patch('/queue/q-seed-1').send(body);
+
+    expect((await patch({})).status).toBe(400);
+    expect((await patch({ direction: 1, priority: 'urgent' })).body.fields).toHaveProperty('body');
+    expect((await patch({ direction: 2 })).body.fields.direction).toBe('Direction must be -1 or 1.');
+    expect((await patch({ priority: 'asap' })).body.fields.priority).toBe('Choose normal or urgent.');
+    expect((await api().patch('/queue/nope').send({ direction: 1 })).status).toBe(404);
+
+    const outcome = await api().post('/services/s1/queue/called').send({ outcome: 'done' });
+    expect(outcome.status).toBe(400);
+    expect(outcome.body.fields.outcome).toBe('Choose seen or no-show.');
+
+    expect((await api().post('/services/s5/queue/call')).body.error).toBe('empty');
+    expect((await api().get('/services/nope/queue')).status).toBe(404);
   });
 });
