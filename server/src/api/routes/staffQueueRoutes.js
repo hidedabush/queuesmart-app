@@ -18,7 +18,12 @@ export const staffServiceQueueRoutes = Router()
 
 // Mounted at /queue AFTER patientQueueRoutes, so '/queue/me' is matched there
 // first instead of being read as an entry id.
-// TODO(staff-queue): add validate(...) with a schema for the PATCH body.
 export const staffQueueRoutes = Router()
-  .patch('/:entryId', requireAuth, requireRole('admin'), staffQueue.moveEntry)
+  .patch(
+    '/:entryId',
+    requireAuth,
+    requireRole('admin'),
+    validate(schemas.entryUpdate),
+    staffQueue.moveEntry
+  )
   .delete('/:entryId', requireAuth, requireRole('admin'), staffQueue.removeEntry);

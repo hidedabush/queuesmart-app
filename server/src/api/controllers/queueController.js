@@ -1,7 +1,7 @@
 import * as queueService from '../services/queueService.js';
 
-// These handlers assume authentication middleware provides req.user.id.
-// Confirm that contract before mounting the routes.
+// Patient handlers. requireAuth sets req.user from the token. The front
+// desk handlers are in staffQueueController.js.
 
 export function join(req, res) {
   const result = queueService.joinQueue(
@@ -24,3 +24,4 @@ export function cancelMine(req, res) {
 
   res.status(204).end();
 }
+

@@ -176,13 +176,13 @@ queuesmart-app/queuesmart-app/         the actual Expo project (package.json liv
     api/                        API CLIENT — the only code that talks to the server
       client.js                  request(): server address and error handling
       services.js                listServices, createService, updateService, getStats, ...
-      queue.js                   placeholder: the queue teammate builds it (docs/A3-api-spec.txt §5)
+      queue.js                   check-in, my queue, and the front desk line (docs/A3-api-spec.txt §5)
   server/                       BACK END (A3) — separate Node + Express app, own package.json
     src/
       app.js                     the Express app; index.js starts it on port 4000
       api/                       "Back-end / API" box: routes, controllers, middleware,
                                  validation, business services (services, wait estimate,
-                                 stats, officeRules). Teammates add auth, queue, history,
+                                 stats, queue, officeRules). Teammates add auth, history,
                                  and the notifications/ folder here.
       database/                  "Database [SQL]" box for now: in-memory tables + repositories
     tests/                       Vitest unit + supertest API tests

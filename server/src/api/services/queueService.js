@@ -1,18 +1,15 @@
 import * as queueRepo from '../../database/repositories/queueRepo.js';
 import * as servicesRepo from '../../database/repositories/servicesRepo.js';
 import { conflict, notFound } from '../errors.js';
-import { estimateWait } from './waitEstimate.js';
 import { recordOutcome } from './historyService.js';
+import { estimateWait } from './waitEstimate.js';
+
+// Patient side of the queue. The front desk side (staffQueueService.js)
+// reuses getOrderedPatientLine so both see the same order.
 
 // A patient may have only one active queue entry across all visit types.
-const ACTIVE_STATUSES = ['waiting', 'head-in', 'called'];
-
 function findActiveEntry(userId) {
-  return (
-    queueRepo
-      .listByUser(userId)
-      .find((entry) => ACTIVE_STATUSES.includes(entry.status)) ?? null
-  );
+  return queueRepo.findActiveByUser(userId);
 }
 
 function getServiceOrThrow(serviceId) {
@@ -41,19 +38,23 @@ function toMyEntry(entry, service, position, peopleAhead, estimatedWait) {
   };
 }
 
-function getOrderedPatientLine(serviceId) {
+// Urgent before normal, then arrival order.
+export function byLineOrder(a, b) {
+  if (a.priority !== b.priority) {
+    return a.priority === 'urgent' ? -1 : 1;
+  }
+
+  return a.order - b.order;
+}
+
+// Everyone still waiting (not called) for one visit type, in serving order.
+export function getOrderedPatientLine(serviceId) {
   return queueRepo
     .listByService(serviceId)
     .filter((entry) =>
       ['waiting', 'head-in'].includes(entry.status)
     )
-    .sort((a, b) => {
-      if (a.priority !== b.priority) {
-        return a.priority === 'urgent' ? -1 : 1;
-      }
-
-      return a.order - b.order;
-    });
+    .sort(byLineOrder);
 }
 
 export function joinQueue(userId, serviceId, reason) {
@@ -100,13 +101,7 @@ export function joinQueue(userId, serviceId, reason) {
     calledAt: null,
   });
 
-  const orderedAfterJoin = [...lineBeforeJoin, entry].sort((a, b) => {
-    if (a.priority !== b.priority) {
-      return a.priority === 'urgent' ? -1 : 1;
-    }
-
-    return a.order - b.order;
-  });
+  const orderedAfterJoin = [...lineBeforeJoin, entry].sort(byLineOrder);
 
   const position =
     orderedAfterJoin.findIndex((item) => item.id === entry.id) + 1;

@@ -1,8 +1,8 @@
 import * as db from '../db.js';
 
-// Visit history table, read-only. The admin dashboard's daily statistics
-// read it. Writing rows when a patient leaves a line belongs to the history
-// module (history teammate), which adds the write functions here.
+// Visit history table. The admin dashboard's daily statistics read it; the
+// history module writes a row every time a patient leaves a line and reads a
+// patient's own rows for GET /history/me.
 
 export function listByDate(date) {
   return db.all('history').filter((row) => row.date === date);

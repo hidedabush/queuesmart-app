@@ -1,33 +1,29 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { ApiError, setAuthToken } from '../../api/client';
 import * as authApi from '../../api/auth';
 import * as servicesApi from '../../api/services';
 import * as queueApi from '../../api/queue';
-import * as historyApi from '../../api/history'
+import * as historyApi from '../../api/history';
 
 /**
  * Shared front-end state, so every screen renders from the same copy.
  *
  * Service Management and the Admin Dashboard come from the QueueSmart
  * server: visit types (with live waiting counts) and today's statistics are
- * read on start, after every change, and every few seconds.
+ * read on start, after every change, and every few seconds. The patient's
+ * check-in and the front desk line come from the queue API the same way;
+ * a front desk line is only read while its screen is open (watchLine).
  *
- * The patient, queue, history and notification parts are still to be
- * connected by the teammates who own them. Until then they are placeholders
- * with the same names and return shapes as A2, so their screens keep
- * working, empty. Replace them with calls to src/api/queue.js (and the
- * auth / notifications APIs) as each module lands; see docs/A3-api-spec.txt.
+ * The patient, history and notification parts are still to be connected by
+ * the teammates who own them. Until then they are placeholders with the
+ * same names and return shapes as A2, so their screens keep working, empty.
+ * Replace them as each module lands; see docs/A3-api-spec.txt.
  */
 const ServicesContext = createContext(null);
 
 const POLL_MS = 5000;
 
 const emptyPatient = { name: '', dob: '', email: '' };
-
-const notConnected = (what) => ({
-  error: 'not-implemented',
-  message: `${what} is not connected to the server yet.`,
-});
 
 function asFailure(error) {
   return { error: error.code, message: error.message, fields: error.fields };
@@ -43,6 +39,9 @@ export function ServicesProvider({ children }) {
   const [activeQueue, setActiveQueue] = useState(null);
   const [queueLoading, setQueueLoading] = useState(true);
   const [queueError, setQueueError] = useState(null);
+  // Front desk lines by service id: { called, waiting }.
+  const [lines, setLines] = useState({});
+  const watchedLines = useRef(new Set());
 
   // Forget the signed-in account and everything loaded for it.
   const signOut = useCallback(() => {
@@ -54,6 +53,7 @@ export function ServicesProvider({ children }) {
     setQueueError(null);
     setStats(null);
     setHistory([]);
+    setLines({});
   }, []);
 
   // An expired or rejected token ends the session.
@@ -99,6 +99,34 @@ export function ServicesProvider({ children }) {
     }
   }, [lostSession]);
 
+  // A failed read keeps the last line on screen; refresh() already reports
+  // a server that can't be reached.
+  const refreshLine = useCallback(async (serviceId) => {
+    try {
+      const line = await queueApi.getLine(serviceId);
+      setLines((current) => ({ ...current, [serviceId]: line }));
+    } catch (error) {
+      if (!(error instanceof ApiError)) throw error;
+      lostSession(error);
+    }
+  }, [lostSession]);
+
+  const refreshLines = useCallback(
+    () => Promise.all([...watchedLines.current].map(refreshLine)),
+    [refreshLine]
+  );
+
+  // The front desk screen calls this on mount; the returned function stops
+  // polling that line when the screen closes.
+  const watchLine = useCallback(
+    (serviceId) => {
+      watchedLines.current.add(serviceId);
+      refreshLine(serviceId);
+      return () => watchedLines.current.delete(serviceId);
+    },
+    [refreshLine]
+  );
+
   const refreshHistory = useCallback(async () => {
     try {
       setHistory(await historyApi.listMine());
@@ -118,13 +146,14 @@ export function ServicesProvider({ children }) {
         refreshMyQueue();
         refreshHistory();
       }
+      if (role === 'admin') refreshLines();
     };
 
     poll();
     const timer = setInterval(poll, POLL_MS);
 
     return () => clearInterval(timer);
-  }, [refresh, refreshHistory, refreshMyQueue, role]);
+  }, [refresh, refreshHistory, refreshLines, refreshMyQueue, role]);
 
   const value = useMemo(() => {
     // Wraps a server call: on success re-read everything and return the
@@ -133,11 +162,11 @@ export function ServicesProvider({ children }) {
       return async (...args) => {
         try {
           const result = await call(...args);
-          await refresh();
+          await Promise.all([refresh(), refreshLines()]);
           return result ?? {};
         } catch (error) {
           if (!(error instanceof ApiError)) throw error;
-          await refresh();
+          await Promise.all([refresh(), refreshLines()]);
           return asFailure(error);
         }
       };
@@ -184,15 +213,15 @@ export function ServicesProvider({ children }) {
       // Admin dashboard (server)
       stats,
 
-      // Front desk line - queue teammate (placeholders)
-      getServiceQueue: () => [],
-      getCalled: () => null,
-      callNext: () => notConnected('Calling patients'),
-      resolveCalled: () => null,
-      moveEntry: () => undefined,
-      removeEntry: () => undefined,
+      // Front desk line (server)
+      watchLine,
+      getServiceQueue: (serviceId) => lines[serviceId]?.waiting ?? [],
+      getCalled: (serviceId) => lines[serviceId]?.called ?? null,
+      callNext: change(async (serviceId) => ({ entry: await queueApi.callNext(serviceId) })),
+      resolveCalled: change(queueApi.resolveCalled),
+      moveEntry: change((serviceId, entryId, direction) => queueApi.moveEntry(entryId, direction)),
+      removeEntry: change(queueApi.removeEntry),
 
-      
       // Patient check-in: connected to the A3 patient queue API.
       activeQueue,
       queueLoading,
@@ -261,7 +290,24 @@ export function ServicesProvider({ children }) {
         }
       },
     };
-  }, [activeQueue, connectionError, patient, queueError, queueLoading, refresh, refreshMyQueue, services, stats, role, signOut, history, refreshHistory]);
+  }, [
+    activeQueue,
+    connectionError,
+    history,
+    lines,
+    patient,
+    queueError,
+    queueLoading,
+    refresh,
+    refreshHistory,
+    refreshLines,
+    refreshMyQueue,
+    role,
+    services,
+    signOut,
+    stats,
+    watchLine,
+  ]);
 
   return <ServicesContext.Provider value={value}>{children}</ServicesContext.Provider>;
 }

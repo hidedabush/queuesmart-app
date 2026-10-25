@@ -1,20 +1,19 @@
 import { Router } from 'express';
 import * as services from '../controllers/servicesController.js';
 import * as stats from '../controllers/statsController.js';
+import { requireAuth, requireRole } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 import * as schemas from '../validation/schemas.js';
 import { patientQueueRoutes } from './patientQueueRoutes.js';
 import { patientServiceQueueRoutes } from './patientServiceQueueRoutes.js';
-import { requireAuth, requireRole } from '../middleware/auth.js';
+import { staffQueueRoutes, staffServiceQueueRoutes } from './staffQueueRoutes.js';
 
 /**
- * Routes built so far: Service Management and the Admin Dashboard's
- * statistics. The full contract for every module, including the ones
- * teammates are building (auth, queue, notifications, history), is in
+ * Service Management, the Admin Dashboard's statistics, and Queue
+ * Management (patient and front desk). Every route needs a signed-in user;
+ * the admin ones also need requireRole('admin'). Auth and history have their
+ * own route files. The full contract for every module is in
  * docs/A3-api-spec.txt.
- *
- * TODO(auth): once the auth module exists, put requireAuth on every route
- * here, and requireRole('admin') on the ones marked "admin".
  */
 
 // 2. Service management
@@ -61,3 +60,6 @@ export const statsRoutes = Router().get(
 
 // Patient queue: current check-in and cancellation.
 export { patientQueueRoutes, patientServiceQueueRoutes };
+
+// Staff queue: view, call, resolve, reorder and remove (admin).
+export { staffQueueRoutes, staffServiceQueueRoutes };

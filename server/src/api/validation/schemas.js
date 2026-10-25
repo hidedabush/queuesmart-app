@@ -179,3 +179,22 @@ export const resolveCalled = {
     },
   },
 };
+
+// PATCH /queue/:entryId: a move or a triage change, never both at once.
+export const entryUpdate = {
+  partial: true,
+  fields: {
+    direction: {
+      type: 'integer',
+      rules: [oneOf([-1, 1], 'Direction must be -1 or 1.')],
+    },
+    priority: {
+      type: 'string',
+      rules: [oneOf(['normal', 'urgent'], 'Choose normal or urgent.')],
+    },
+  },
+  refine: (value) =>
+    'direction' in value && 'priority' in value
+      ? { body: 'Send either direction or priority, not both.' }
+      : null,
+};

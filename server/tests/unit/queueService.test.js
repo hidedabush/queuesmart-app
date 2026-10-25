@@ -2,6 +2,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import * as db from '../../src/database/db.js';
 import * as queueService from '../../src/api/services/queueService.js';
+import { statsForDate, today } from '../../src/api/services/statsService.js';
 
 beforeEach(() => {
   db.reset();
@@ -167,6 +168,14 @@ describe('patient queue service', () => {
           code: 'not-found',
         })
       );
+    });
+
+    it('records a cancelled visit in history', () => {
+      queueService.joinQueue('u-patient-test', 's1', 'New cough');
+      queueService.cancelQueue('u-patient-test');
+
+      const row = statsForDate(today()).services.find((r) => r.serviceId === 's1');
+      expect(row.cancelled).toBe(1);
     });
   });
 });
