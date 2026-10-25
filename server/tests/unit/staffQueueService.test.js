@@ -29,6 +29,26 @@ describe('staff queue service', () => {
       expect(line.waiting.map((entry) => entry.position)).toEqual([1, 2, 3, 4, 5, 6]);
     });
 
+    it('shows a one-word name as is', () => {
+      db.update('users', 'u-seed-1', { name: 'Cher' });
+
+      expect(staffQueue.getLine('s1').waiting[0]).toMatchObject({
+        patientName: 'Cher',
+        displayName: 'Cher',
+      });
+    });
+
+    it('still lists a patient whose account was deleted, without a name', () => {
+      db.remove('users', 'u-seed-1');
+
+      expect(staffQueue.getLine('s1').waiting[0]).toMatchObject({
+        id: 'q-seed-1',
+        patientName: null,
+        dob: null,
+        displayName: null,
+      });
+    });
+
     it('returns not-found for an unknown service', () => {
       expect(() => staffQueue.getLine('nope')).toThrow(
         expect.objectContaining({ status: 404 })
@@ -109,6 +129,14 @@ describe('staff queue service', () => {
       const line = staffQueue.moveEntry('q-seed-1', { direction: -1 });
 
       expect(ids(line)[0]).toBe('q-seed-1');
+    });
+
+    it('changes nothing for a patient who is already called', () => {
+      staffQueue.callNext('s1');
+      const line = staffQueue.moveEntry('q-seed-1', { direction: 1 });
+
+      expect(ids(line)).toEqual(['q-seed-2', 'q-seed-3', 'q-seed-4', 'q-seed-5', 'q-seed-6']);
+      expect(db.find('queueEntries', 'q-seed-1').status).toBe('called');
     });
 
     it('never moves a normal patient past an urgent one', () => {

@@ -152,3 +152,35 @@ What changed, in plain words. Newest work at the bottom.
     + Created, edited (10 -> 15 min) and deleted a new visit type.
     + Delete is blocked for Sick Visit (people in line).
     + Patient screens and the staff line screen open with no errors.
+
+[19] MERGED: auth + history (master) with the staff queue (Nguyen-Edit)
+    + Staff queue (view line, call next, seen / no-show, move, urgent,
+      remove) now lives in server/src/api/services/staffQueueService.js,
+      staff-only (requireAuth + requireRole('admin')).
+    + Front desk line shows the patient's name and date of birth from
+      the users table.
+    + Leaving a line (any way) writes one history row via recordOutcome.
+    + The demo-patient stand-in is gone: every queue route needs a token.
+
+[20] MORE TESTS: unit coverage for auth, history and validation
+    NEW unit tests (server/tests/unit/)
+    + authService.test.js     register, login, salted hashes, bad stored
+                              hashes, missing JWT secret, current user,
+                              change password
+    + authMiddleware.test.js  missing / empty / forged / altered / expired
+                              tokens, bad payloads, requireRole 401 / 403
+    + historyService.test.js  history rows, deleted visit type, unknown
+                              outcome, "my history" newest first
+    + validation.test.js      register / login / change password rules,
+                              visit reason, resolve and move bodies
+    + staffQueueService.test.js  one-word and missing names, moving a
+                              called patient
+    MOVED
+    + tests/auth.test.js -> tests/integration/auth.test.js
+      (+ a change-password API test)
+    NUMBERS
+    + 13 files, 168 tests, all passing.
+    + Coverage, all tests:  99.75% lines, 98.8% branches, 100% functions.
+    + Coverage, unit tests only (tests/unit):  90% lines, 94% branches.
+      Controllers are only covered by the API tests, by design.
+    + Run:  cd server  ->  npm run test:coverage
