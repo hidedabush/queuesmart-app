@@ -3,6 +3,7 @@ import express from 'express';
 import { errorHandler, notFoundHandler } from './api/middleware/errors.js';
 import { authRoutes } from './api/routes/authRoutes.js';
 import { historyRoutes } from './api/routes/historyRoutes.js';
+import { notificationRoutes } from './api/routes/notificationRoutes.js';
 import {
   patientQueueRoutes,
   patientServiceQueueRoutes,
@@ -34,7 +35,7 @@ export function createApp() {
   app.use('/queue', patientQueueRoutes);
   app.use('/queue', staffQueueRoutes);
   app.use('/history', historyRoutes);
-  // Teammates mount /notifications here.
+  app.use('/notifications', notificationRoutes);
 
   app.use(notFoundHandler);
   app.use(errorHandler);

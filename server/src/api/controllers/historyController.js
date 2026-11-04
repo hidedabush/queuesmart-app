@@ -1,5 +1,5 @@
 import * as history from '../services/historyService.js';
 
-export function listMine(req, res) {
-  res.json(history.listMine(req.user.id));
+export async function listMine(req, res) {
+  res.json(await history.listMine(req.user.id));
 }

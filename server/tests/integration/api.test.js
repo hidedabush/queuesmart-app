@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import * as db from '../../src/database/db.js';
+import * as db from '../fakes/db.js';
 import { addToLine, api, clearLine, validService } from '../helpers.js';
 
 beforeEach(() => {

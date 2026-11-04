@@ -10,8 +10,8 @@ export async function login(req, res) {
   res.status(200).json(result);
 }
 
-export function getMe(req, res) {
-  const result = authService.getCurrentUser(req.user.id);
+export async function getMe(req, res) {
+  const result = await authService.getCurrentUser(req.user.id);
   res.status(200).json(result);
 }
 

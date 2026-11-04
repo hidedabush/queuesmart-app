@@ -6,13 +6,13 @@ import * as servicesRepo from '../../database/repositories/servicesRepo.js';
 
 export const OUTCOMES = ['seen', 'no-show', 'cancelled', 'removed'];
 
-// Called by the queue code whenever an entry leaves a line, BEFORE the entry
-// is removed:  seen | no-show (staff resolve)  cancelled (patient)  removed (staff).
-export function recordOutcome(entry, outcome) {
+// Called by queueService.leaveLine whenever an entry leaves a line:
+//   seen | no-show (staff resolve)  cancelled (patient)  removed (staff).
+export async function recordOutcome(entry, outcome) {
   if (!OUTCOMES.includes(outcome)) throw new Error(`Unknown history outcome: ${outcome}`);
 
   const leftAt = Date.now();
-  const service = servicesRepo.findById(entry.serviceId);
+  const service = await servicesRepo.findById(entry.serviceId);
 
   return historyRepo.insert({
     userId: entry.userId,
@@ -39,6 +39,7 @@ function toHistoryEntry(row) {
 }
 
 // Only the caller's own rows, newest first.
-export function listMine(userId) {
-  return { history: historyRepo.listByUser(userId).map(toHistoryEntry) };
+export async function listMine(userId) {
+  const rows = await historyRepo.listByUser(userId);
+  return { history: rows.map(toHistoryEntry) };
 }

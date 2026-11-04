@@ -11,10 +11,11 @@ export function today(now = Date.now()) {
   return new Date(now).toISOString().slice(0, 10);
 }
 
-export function statsForDate(date) {
-  const rows = historyRepo.listByDate(date);
+export async function statsForDate(date) {
+  const rows = await historyRepo.listByDate(date);
+  const allServices = await servicesRepo.list();
 
-  const services = servicesRepo.list().map((service) => {
+  const services = await Promise.all(allServices.map(async (service) => {
     const mine = rows.filter((row) => row.serviceId === service.id);
     const count = (outcome) => mine.filter((row) => row.outcome === outcome).length;
     const waits = mine
@@ -24,7 +25,7 @@ export function statsForDate(date) {
     return {
       serviceId: service.id,
       name: service.name,
-      currentlyWaiting: queueRepo.listWaiting(service.id).length,
+      currentlyWaiting: (await queueRepo.listWaiting(service.id)).length,
       served: count('seen'),
       noShows: count('no-show'),
       cancelled: count('cancelled'),
@@ -33,7 +34,7 @@ export function statsForDate(date) {
         ? Math.round(waits.reduce((sum, minutes) => sum + minutes, 0) / waits.length)
         : null,
     };
-  });
+  }));
 
   return { date, services };
 }

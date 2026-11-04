@@ -1,6 +1,6 @@
 import jwt from 'jsonwebtoken';
 import { beforeEach, describe, expect, it } from 'vitest';
-import * as db from '../../src/database/db.js';
+import * as db from '../fakes/db.js';
 import * as authService from '../../src/api/services/authService.js';
 
 const SECRET = 'test-only-secret-for-queuesmart';
@@ -114,15 +114,15 @@ describe('login', () => {
 });
 
 describe('getCurrentUser', () => {
-  it('returns the public profile', () => {
-    const { user } = authService.getCurrentUser('u-patient');
+  it('returns the public profile', async () => {
+    const { user } = await authService.getCurrentUser('u-patient');
 
     expect(user).toMatchObject({ id: 'u-patient', email: 'patient@queuesmart.test', role: 'user' });
     expect(user.passwordHash).toBeUndefined();
   });
 
-  it('is a 401 when the account no longer exists', () => {
-    expect(() => authService.getCurrentUser('u-gone')).toThrow(
+  it('is a 401 when the account no longer exists', async () => {
+    await expect(authService.getCurrentUser('u-gone')).rejects.toThrow(
       expect.objectContaining({ status: 401, code: 'unauthenticated' })
     );
   });

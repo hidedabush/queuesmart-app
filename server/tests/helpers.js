@@ -3,7 +3,7 @@ import request from 'supertest';
 process.env.JWT_SECRET = 'test-only-secret-for-queuesmart';
 
 const { createApp } = await import('../src/app.js');
-import * as db from '../src/database/db.js';
+import * as db from './fakes/db.js';
 
 export const app = createApp();
 

@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import request from 'supertest';
 
 import { createApp } from '../../src/app.js';
-import { reset } from '../../src/database/db.js';
+import { reset } from '../fakes/db.js';
 
 const app = createApp();
 

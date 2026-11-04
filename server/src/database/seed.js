@@ -1,4 +1,4 @@
-// Starting rows for the in-memory database: a primary-care provider office
+// Starting rows for the database (see migrate.js and the test fakes): a primary-care provider office
 // that takes same-day walk-in visits. All names are fictional.
 
 import { scryptSync } from 'node:crypto';
@@ -118,6 +118,7 @@ export function seedTables() {
     order: index + 1,
     arrivedAt: startedAt + index * 60_000,
     calledAt: null,
+    leftAt: null,
   }));
 
   // Past visits for the demo patient, so statistics have something to read.
@@ -152,5 +153,83 @@ export function seedTables() {
     services: SEED_SERVICES.map((row) => ({ ...row })),
     queueEntries,
     history,
+    // Messages the demo patient was sent on past visits, already read.
+    notifications: history
+      .filter((row) => row.outcome === 'seen')
+      .map((row, index) => ({
+        id: `n-seed-${index + 1}`,
+        userId: 'u-patient',
+        title: `${row.serviceName}: it is your turn`,
+        message: 'Please come to the front desk now.',
+        createdAt: row.calledAt,
+        status: 'viewed',
+      })),
   };
+}
+
+// Visits that already finished today, so the admin dashboard's statistics
+// and the front desk have a realistic day to show. Only `npm run db:seed`
+// adds these; the tests start from seedTables() alone.
+const FINISHED_TODAY = [
+  ['s1', 'seen', 22],
+  ['s1', 'seen', 35],
+  ['s1', 'no-show', null],
+  ['s2', 'seen', 18],
+  ['s3', 'seen', 9],
+  ['s3', 'cancelled', null],
+  ['s4', 'seen', 6],
+  ['s4', 'removed', null],
+];
+
+// History outcome -> the status its queue entry ends with.
+const ENTRY_STATUS = { seen: 'served', 'no-show': 'no-show', cancelled: 'canceled', removed: 'removed' };
+
+export function sampleTables(now = Date.now()) {
+  const services = Object.fromEntries(SEED_SERVICES.map((service) => [service.id, service.name]));
+  const users = [];
+  const queueEntries = [];
+  const history = [];
+
+  FINISHED_TODAY.forEach(([serviceId, outcome, waitMinutes], index) => {
+    const number = index + 1;
+    const userId = `u-sample-${number}`;
+    const joinedAt = now - (4 * 60 - index * 15) * 60_000;
+    const calledAt = waitMinutes === null ? null : joinedAt + waitMinutes * 60_000;
+    const leftAt = (calledAt ?? joinedAt + 20 * 60_000) + 10 * 60_000;
+
+    users.push({
+      id: userId,
+      name: `Sample Patient ${number}`,
+      dob: `198${number}-0${number}-1${number}`,
+      email: `sample-patient-${number}@queuesmart.test`,
+      phone: `713555${String(200 + number).padStart(4, '0')}`,
+      passwordHash: null,
+      role: 'user',
+    });
+    queueEntries.push({
+      id: `q-sample-${number}`,
+      userId,
+      serviceId,
+      reason: 'Earlier visit today',
+      status: ENTRY_STATUS[outcome],
+      priority: 'normal',
+      order: 100 + number,
+      arrivedAt: joinedAt,
+      calledAt,
+      leftAt,
+    });
+    history.push({
+      id: `h-sample-${number}`,
+      userId,
+      serviceId,
+      serviceName: services[serviceId],
+      date: new Date(leftAt).toISOString().slice(0, 10),
+      joinedAt,
+      calledAt,
+      leftAt,
+      outcome,
+    });
+  });
+
+  return { users, queueEntries, history };
 }

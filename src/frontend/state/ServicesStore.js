@@ -4,6 +4,7 @@ import * as authApi from '../../api/auth';
 import * as servicesApi from '../../api/services';
 import * as queueApi from '../../api/queue';
 import * as historyApi from '../../api/history';
+import * as notificationsApi from '../../api/notifications';
 
 /**
  * Shared front-end state, so every screen renders from the same copy.
@@ -14,10 +15,8 @@ import * as historyApi from '../../api/history';
  * check-in and the front desk line come from the queue API the same way;
  * a front desk line is only read while its screen is open (watchLine).
  *
- * The patient, history and notification parts are still to be connected by
- * the teammates who own them. Until then they are placeholders with the
- * same names and return shapes as A2, so their screens keep working, empty.
- * Replace them as each module lands; see docs/A3-api-spec.txt.
+ * The patient's visit history and notifications are read the same way
+ * (docs/A4-database-design.txt).
  */
 const ServicesContext = createContext(null);
 
@@ -36,6 +35,7 @@ export function ServicesProvider({ children }) {
   const [patient, setPatientState] = useState(emptyPatient);
   const [role, setRole] = useState(null);
   const [history, setHistory] = useState([]);
+  const [notifications, setNotifications] = useState([]);
   const [activeQueue, setActiveQueue] = useState(null);
   const [queueLoading, setQueueLoading] = useState(true);
   const [queueError, setQueueError] = useState(null);
@@ -53,6 +53,7 @@ export function ServicesProvider({ children }) {
     setQueueError(null);
     setStats(null);
     setHistory([]);
+    setNotifications([]);
     setLines({});
   }, []);
 
@@ -136,6 +137,15 @@ export function ServicesProvider({ children }) {
     }
   }, [lostSession]);
 
+  const refreshNotifications = useCallback(async () => {
+    try {
+      setNotifications(await notificationsApi.listMine());
+    } catch (error) {
+      if (!(error instanceof ApiError)) throw error;
+      lostSession(error);
+    }
+  }, [lostSession]);
+
   // Load once, then keep the board current. Only after sign-in.
   useEffect(() => {
     if (!role) return undefined;
@@ -145,6 +155,7 @@ export function ServicesProvider({ children }) {
       if (role === 'user') {
         refreshMyQueue();
         refreshHistory();
+        refreshNotifications();
       }
       if (role === 'admin') refreshLines();
     };
@@ -153,7 +164,7 @@ export function ServicesProvider({ children }) {
     const timer = setInterval(poll, POLL_MS);
 
     return () => clearInterval(timer);
-  }, [refresh, refreshHistory, refreshLines, refreshMyQueue, role]);
+  }, [refresh, refreshHistory, refreshLines, refreshMyQueue, refreshNotifications, role]);
 
   const value = useMemo(() => {
     // Wraps a server call: on success re-read everything and return the
@@ -234,7 +245,7 @@ export function ServicesProvider({ children }) {
 
           setActiveQueue(entry);
           setQueueError(null);
-          await refresh();
+          await Promise.all([refresh(), refreshNotifications()]);
 
           return entry;
         } catch (error) {
@@ -261,6 +272,32 @@ export function ServicesProvider({ children }) {
 
       // Connected to GET /history/me.
       history,
+
+      // Connected to /notifications. Marking is shown at once and then saved;
+      // the next read puts back anything the server did not accept.
+      notifications,
+      markNotificationViewed: async (id) => {
+        setNotifications((current) =>
+          current.map((item) => (item.id === id ? { ...item, status: 'viewed' } : item))
+        );
+        try {
+          await notificationsApi.markViewed(id);
+        } catch (error) {
+          if (!(error instanceof ApiError)) throw error;
+          lostSession(error);
+        }
+        await refreshNotifications();
+      },
+      markAllNotificationsViewed: async () => {
+        setNotifications((current) => current.map((item) => ({ ...item, status: 'viewed' })));
+        try {
+          await notificationsApi.markAllViewed();
+        } catch (error) {
+          if (!(error instanceof ApiError)) throw error;
+          lostSession(error);
+        }
+        await refreshNotifications();
+      },
 
       // Signed-in patient - auth teammate (kept in memory, as in A2)
       patient,
@@ -295,6 +332,8 @@ export function ServicesProvider({ children }) {
     connectionError,
     history,
     lines,
+    lostSession,
+    notifications,
     patient,
     queueError,
     queueLoading,
@@ -302,6 +341,7 @@ export function ServicesProvider({ children }) {
     refreshHistory,
     refreshLines,
     refreshMyQueue,
+    refreshNotifications,
     role,
     services,
     signOut,

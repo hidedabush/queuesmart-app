@@ -29,6 +29,14 @@ rules are in section 9.
    the SDK it was built for. If your store copy has already moved to 58, the QR
    code will show an "incompatible SDK" error; the project then has to move
    to SDK 58 as well (section 8).
+5. **MySQL Workbench** (optional) — lets you view and edit the database's tables.
+   The app does not need it. On Windows:
+   ```bash
+   winget install --id Oracle.MySQLWorkbench --source winget
+   ```
+   On a Mac, or without `winget`, download it from
+   https://dev.mysql.com/downloads/workbench/. You do not need to install MySQL
+   itself: the team shares one hosted database (section 3).
 
 ### VS Code extensions
 
@@ -93,14 +101,75 @@ it means you're one folder too shallow (or too deep) — `cd` until `dir` /
 `ls` shows a `package.json` in the current folder, then run `npx expo start`
 from there.
 
-### Start the app and the backend (A3)
+### Connect to the database (once per machine)
 
-**A3 status.** Only **Service Management** and the **Admin Dashboard** run on
-the QueueSmart server in `server/` so far. Login, check-in, the front desk's
-waiting line, notifications and visit history are being built by their
-owners; until then their screens open with empty data or a "not connected to
-the server yet" message, and sign-in only checks the form (as in A2). The full
-plan for every module is in `docs/`.
+The server stores its data in one MySQL database hosted on
+[Aiven](https://aiven.io), shared by the whole team. It will not start until
+it can reach that database.
+
+1. Ask a teammate for the connection string (it looks like
+   `mysql://USER:PASSWORD@HOST:PORT/defaultdb`). Share it privately, never in
+   git or a public chat.
+2. Copy `server/.env.example` to `server/.env` and paste it in as
+   `DATABASE_URL`. Git ignores `.env`.
+3. Run `git pull` if you do not have `server/aiven-ca.pem`. Aiven only accepts
+   encrypted connections, and the server needs this certificate to make one.
+
+Everyone sees and changes the same data, so use fictional details only. When
+a teammate adds a table to `server/src/database/schema.sql`, run `npm run
+db:migrate` from `server/`. It creates any missing tables and leaves existing
+ones alone. A change to an existing table needs `npm run db:reset` (below), or
+an `ALTER TABLE` in Workbench to keep the data.
+
+**Creating the database (one person, once).**
+
+1. Sign up at https://console.aiven.io and create a **MySQL** service on the
+   **Free** plan.
+2. On the service page, download the **CA certificate** to `server/aiven-ca.pem`
+   and commit it. It is public, so it is safe in git.
+3. Copy the **Service URI** into `server/.env` as `DATABASE_URL`.
+4. From `server/`, run `npm run db:seed`. This creates the tables and adds the
+   sample data below. It refuses to run once the database has data.
+
+**Sample data.** `npm run db:seed` fills an empty database with:
+
+- 5 visit types and their queues (Prescription Refill closed)
+- 15 patients waiting in line
+- 8 visits that already finished today (served, no-show, canceled, removed),
+  so the admin dashboard's statistics have numbers
+- 3 past visits and 2 read notifications for the demo patient
+
+| Account | Email | Password |
+| --- | --- | --- |
+| Office staff (admin) | `admin@queuesmart.test` | `Admin#2026` |
+| Demo patient | `patient@queuesmart.test` | `Patient#2026` |
+
+The other sample patients can't sign in: they were registered at the front
+desk. To start over, run `npm run db:reset`. It **deletes every table and all
+data for the whole team**, then rebuilds the tables and adds the sample data
+again. Tell the team before you run it.
+
+**Looking at the data in MySQL Workbench.**
+
+1. Click **+** next to _MySQL Connections_, and copy the host, port, user and
+   password from the Aiven service page. Set **Default Schema** to `defaultdb`.
+2. On the **SSL** tab, set **Use SSL** to _Require_ and **SSL CA File** to
+   `server/aiven-ca.pem`.
+3. Click **Test Connection**, then **OK**, and open the connection.
+4. Run `select * from queue_entries where status in ('waiting', 'called');` to
+   see who is in line. Finished visits stay in that table with their final
+   status. `docs/A4-database-design.txt` explains every table.
+
+Edits made in Workbench are live for everyone, so be careful with `DELETE` and
+`UPDATE`.
+
+### Start the app and the backend
+
+Every screen reads and saves through the QueueSmart server in `server/`, and
+the server keeps everything in the MySQL database: accounts, visit types,
+queues, check-ins, notifications and visit history. The API is described in
+`docs/A3-api-spec.txt`, and the A4 additions in
+`docs/A4-database-design.txt`.
 
 The easiest way to start the app and the server together is the batch file in
 the project root:
@@ -122,8 +191,8 @@ npm run dev     # API on http://localhost:4000, restarts when you save
 
 Then run `npx expo start` in a second terminal from the project root.
 
-To try Service Management: open _Office staff sign in_, type any valid email
-and an 8+ character password, and you land on the front desk board.
+To try the front desk, open _Office staff sign in_ and use the admin account
+from the sample data. To try check-in, sign in as the demo patient.
 
 The app finds the server on its own: on web it uses the same host on port
 4000, and in Expo Go it uses the laptop address from the QR code. If that
@@ -131,7 +200,11 @@ does not work (for example with `--tunnel`), set the address yourself before
 `npx expo start`, e.g. `EXPO_PUBLIC_API_URL=http://192.168.1.20:4000`.
 
 Run the backend tests with `cd server && npm test`, or `npm run
-test:coverage` for the coverage report (`server/coverage/index.html`).
+test:coverage` for the coverage report (`server/coverage/index.html`). These
+use in-memory data, so they never touch the shared database and need no
+`.env`. After changing SQL in `server/src/database/`, also run `npm run
+test:mysql`, which checks the real queries against the shared database and
+deletes the rows it creates.
 
 A QR code appears in the terminal. On your phone, open the **Camera app**
 (iOS) or the **Expo Go** app (Android) and scan it, while your phone and
@@ -141,6 +214,25 @@ iPhone with Expo Go instead.
 
 > On campus Wi-Fi, devices are often isolated from each other and the QR code
 > will not connect. Run `npx expo start --tunnel` instead.
+
+### Hosting the API online (optional)
+
+You only need this if the app should work without someone's laptop running
+the server, for example for a demo. The database is already online on Aiven.
+[Render](https://render.com)'s free plan can run the API straight from GitHub:
+
+1. On Render, create a **Web Service** from this GitHub repository.
+2. Set **Root Directory** to `server`, **Build Command** to `npm ci`, and
+   **Start Command** to `npm start`.
+3. Under **Environment**, add `DATABASE_URL` (the Aiven Service URI),
+   `JWT_SECRET` (any long random text) and `NODE_ENV` = `production`.
+4. Deploy, then open `https://<your-service>.onrender.com/health`. It should
+   show `{"ok":true}`.
+5. Point the app at it:
+   `EXPO_PUBLIC_API_URL=https://<your-service>.onrender.com npx expo start`.
+
+A free Render service sleeps after 15 minutes without traffic and takes about
+a minute to wake, so open the `/health` link a minute before a demo.
 
 ---
 
@@ -184,8 +276,11 @@ queuesmart-app/queuesmart-app/         the actual Expo project (package.json liv
                                  validation, business services (services, wait estimate,
                                  stats, queue, officeRules). Teammates add auth, history,
                                  and the notifications/ folder here.
-      database/                  "Database [SQL]" box for now: in-memory tables + repositories
+      database/                  "Database [SQL]" box: MySQL connection, schema.sql, migrate.js,
+                                 seed data, and repositories/ (all the SQL queries)
     tests/                       Vitest unit + supertest API tests
+      fakes/                     in-memory repositories that `npm test` uses instead of MySQL
+      mysql/                     checks the real repositories (`npm run test:mysql`)
   docs/                         A3 proposal, API spec, testing plan, change log
 
 Calls only go downwards: **screens → frontend/state → src/api → (HTTP) → server**.
@@ -259,8 +354,6 @@ adds these already — check before the first push, because committing
 
 ## 7. What is deliberately not here
 
-- No real database yet. The server keeps everything in memory, so data resets
-  when the server restarts (A4 replaces `server/src/database/repositories/`).
 - No auth on the server yet. The service endpoints are open until the auth
   module adds the staff-only check (marked `TODO(auth)` in
   `server/src/api/routes/index.js`).
