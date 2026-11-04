@@ -152,5 +152,6 @@ export function seedTables() {
     services: SEED_SERVICES.map((row) => ({ ...row })),
     queueEntries,
     history,
+    notifications: [],
   };
 }
