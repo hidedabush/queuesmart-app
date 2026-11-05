@@ -8,7 +8,7 @@
    2. Tables and how they map to the A4 requirements
    3. Relationships (ER diagram)
    4. SQL to create the tables
-   5. New API endpoints (notifications)
+   5. Notifications in the database
    6. Validation: backend and database
    7. How the backend uses the database
    8. Tests and coverage
@@ -57,7 +57,10 @@
                                         'no-show' | 'canceled' | 'removed')
  6. Notification     notifications      User ID -> userId, Message -> title +
                                         message, Timestamp -> createdAt,
-                                        Status -> status ('sent' | 'viewed')
+                                        Status -> status ('sent' | 'viewed'),
+                                        plus type, entryId, serviceId and
+                                        channels from docs/A3-api-spec.txt
+                                        section 6
  6. History          visit_history      One row per finished visit: userId,
                                         service, date, times, outcome
 
@@ -111,7 +114,8 @@
  queues            id      serviceId -> services.id                UNIQUE serviceId
  queue_entries     id      queueId -> queues.id,                   UNIQUE activeUserId,
                            userId -> user_credentials.id           UNIQUE calledQueueId
- notifications     id      userId -> user_credentials.id           INDEX (userId, createdAt)
+ notifications     id      userId -> user_credentials.id,          INDEX (userId, createdAt),
+                           entryId -> queue_entries.id             INDEX (entryId, type)
  visit_history     id      userId -> user_credentials.id           INDEX (userId, leftAt),
                                                                    INDEX (date)
 
@@ -123,21 +127,29 @@
 
 
 -------------------------------------------------------------------------------
- 5. NEW API ENDPOINTS (A4)
+ 5. NOTIFICATIONS IN THE DATABASE
 -------------------------------------------------------------------------------
 
- All need a signed-in user and only touch the caller's own notifications.
+ The endpoints, notification shape and message templates are the ones in
+ docs/A3-api-spec.txt section 6 (the notification component in
+ server/src/api/notifications/). A4 stores them in the notifications table:
 
-   GET   /notifications/me         -> { notifications: [{ id, title, message,
-                                        createdAt, status }] }  newest 20
-   PATCH /notifications/:id/viewed -> 204, or 404 if not the caller's
-   PATCH /notifications/me/viewed  -> 204  (marks all as viewed: "Clear all")
+   GET   /notifications/me           { notifications, unread }, newest first
+   PATCH /notifications/:id/read     { notification }, 404 if not the caller's
+   POST  /notifications/me/read-all  { unread: 0 }  ("Clear all")
 
- The server creates a notification when a patient checks in, is called, is
- marked a no-show, or is removed by the front desk. Notifications never
- include the reason for the visit, because they can show on a lock screen.
- The patient dashboard's bell lists them; dismissing one, or "Clear all",
- marks them viewed in the database.
+ The API's read flag is stored as A4's status column: read = false is
+ 'sent', read = true is 'viewed'. channels is stored as JSON.
+
+ When notices are made (the spec's "Triggers"):
+   joined     the patient checks in
+   almost-up  the line changes (check-in, cancel, call, move, remove) and
+              the patient has 2 or fewer ahead; once per check-in
+   called     the front desk calls the patient
+ When the patient leaves the line, every unread notice for that check-in is
+ marked read. Notifications never include the reason for the visit, because
+ they can show on a lock screen. The patient dashboard's bell lists the
+ unread ones.
 
  Every other endpoint is unchanged from docs/A3-api-spec.txt.
 
@@ -220,8 +232,8 @@
    tests/integration/notifications.test.js
    tests/mysql/repositories.test.js    against MySQL (npm run test:mysql)
 
- Result when this was written: 225 tests passed, 99.6% line coverage
- (npm run test:coverage), and 21 of 21 MySQL tests passed.
+ Result when this was written: 239 tests passed, 99.3% line coverage
+ (npm run test:coverage), and 23 of 23 MySQL tests passed.
 
 
 -------------------------------------------------------------------------------

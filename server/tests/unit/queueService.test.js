@@ -166,17 +166,35 @@ describe('patient queue service', () => {
       expect(entry.serviceId).toBe('s3');
     });
 
-    it('sends a check-in notification without the visit reason', async () => {
-      await queueService.joinQueue('u-patient-test', 's1', 'Private reason');
+    it('sends a joined notification without the visit reason', async () => {
+      await queueService.joinQueue('u-patient', 's1', 'Private reason');
 
-      const [notification] = db.all('notifications').filter((row) => row.userId === 'u-patient-test');
+      const [notification] = db.all('notifications').filter((row) => row.userId === 'u-patient');
 
       expect(notification).toMatchObject({
-        title: 'Sick Visit: checked in',
-        message: 'You are number 7 in line. We will tell you when it is your turn.',
-        status: 'sent',
+        type: 'joined',
+        title: 'Sick Visit: you’re checked in',
+        message: 'You’re #7 in line, about 90-117 min.',
+        read: false,
       });
       expect(JSON.stringify(notification)).not.toContain('Private reason');
+    });
+
+    it('tells the first patients in line to head in once someone joins', async () => {
+      await queueService.joinQueue('u-patient', 's1', 'New cough');
+
+      const almostUp = db.all('notifications').filter((row) => row.type === 'almost-up');
+
+      expect(almostUp.map((row) => row.userId)).toEqual(['u-seed-1', 'u-seed-2', 'u-seed-3']);
+    });
+
+    it('closes the patient’s notices when they cancel', async () => {
+      await queueService.joinQueue('u-patient', 's1', 'New cough');
+      await queueService.cancelQueue('u-patient');
+
+      const mine = db.all('notifications').filter((row) => row.userId === 'u-patient');
+      expect(mine.length).toBeGreaterThan(0);
+      expect(mine.every((row) => row.read)).toBe(true);
     });
 
     it('rejects cancellation when the patient has no active entry', async () => {

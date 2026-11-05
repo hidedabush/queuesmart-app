@@ -1,8 +1,8 @@
 import * as queueRepo from '../../database/repositories/queueRepo.js';
 import * as servicesRepo from '../../database/repositories/servicesRepo.js';
 import { conflict, notFound } from '../errors.js';
+import { closeForEntry, notifyJoined, notifyLineChanged } from '../notifications/notificationService.js';
 import { recordOutcome } from './historyService.js';
-import { notify } from './notificationService.js';
 import { estimateWait } from './waitEstimate.js';
 
 // Patient side of the queue. The front desk side (staffQueueService.js)
@@ -64,11 +64,20 @@ const LEFT_STATUS = {
 };
 
 // Every way out of a line: cancelQueue (patient), resolveCalled and
-// removeEntry (front desk). The history row copies the entry's details, then
-// the entry is kept with its final status.
+// removeEntry (front desk). The history row copies the entry's details, the
+// entry is kept with its final status, and its unread notices are closed.
 export async function leaveLine(entry, outcome) {
   await recordOutcome(entry, outcome);
   await queueRepo.finish(entry.id, LEFT_STATUS[outcome]);
+  await closeForEntry(entry.id);
+}
+
+// queue.changed (docs/A3-api-spec.txt section 5): tell anyone now near the
+// front of this line to head to the office.
+export async function announceLineChange(serviceId) {
+  const service = await servicesRepo.findById(serviceId);
+  if (!service) return;
+  await notifyLineChanged(service, await getOrderedPatientLine(serviceId));
 }
 
 export async function joinQueue(userId, serviceId, reason) {
@@ -123,11 +132,8 @@ export async function joinQueue(userId, serviceId, reason) {
   const peopleAhead = position - 1;
   const estimatedWait = estimateWait(service, peopleAhead);
 
-  await notify(
-    userId,
-    `${service.name}: checked in`,
-    `You are number ${position} in line. We will tell you when it is your turn.`
-  );
+  await notifyJoined(entry, service, position, estimatedWait);
+  await announceLineChange(serviceId);
 
   return {
     entry: toMyEntry(
@@ -192,4 +198,5 @@ export async function cancelQueue(userId) {
   }
 
   await leaveLine(entry, 'cancelled');
+  await announceLineChange(entry.serviceId);
 }

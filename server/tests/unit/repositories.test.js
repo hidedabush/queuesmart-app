@@ -255,36 +255,66 @@ describe('historyRepo', () => {
 });
 
 describe('notificationRepo', () => {
-  it('saves a new notification as sent', async () => {
-    const row = await notificationRepo.insert({ userId: 'u1', title: 'Hi', message: 'Come in.' });
+  const sent = {
+    userId: 'u1',
+    type: 'called',
+    title: 'Sick Visit: it’s your turn',
+    message: 'Please come to the front desk now.',
+    serviceId: 's1',
+    entryId: 'q1',
+    read: false,
+    createdAt: 1000,
+    channels: ['in-app', 'sms'],
+  };
 
-    expect(row).toEqual({
-      id: 'n-new',
-      userId: 'u1',
-      title: 'Hi',
-      message: 'Come in.',
-      createdAt: expect.any(Number),
-      status: 'sent',
-    });
-    expect(call(sql.query).text).toBe('INSERT INTO notifications SET ?');
+  it('stores read as A4’s status and channels as JSON', async () => {
+    const row = await notificationRepo.insert(sent);
+
+    expect(row).toEqual({ ...sent, id: 'n-new' });
+    const [stored] = call(sql.query).params;
+    expect(stored).toMatchObject({ id: 'n-new', status: 'sent', channels: '["in-app","sms"]' });
+    expect(stored).not.toHaveProperty('read');
   });
 
-  it('lists the newest 20 for one patient', async () => {
-    await notificationRepo.listByUser('u1');
-    expect(call(sql.query).text).toContain('ORDER BY createdAt DESC, id DESC LIMIT ?');
-    expect(call(sql.query).params).toEqual(['u1', 20]);
+  it('reads status back as a boolean read', async () => {
+    sql.query.mockResolvedValue([{ id: 'n1', read: 1 }, { id: 'n2', read: 0 }]);
+
+    const rows = await notificationRepo.listByUser('u1');
+
+    expect(rows.map((row) => row.read)).toEqual([true, false]);
+    expect(call(sql.query).text).toContain("status = 'viewed' AS `read`");
+    expect(call(sql.query).text).toMatch(/ORDER BY createdAt DESC, id DESC$/);
+    expect(call(sql.query).params).toEqual(['u1']);
   });
 
-  it('reports whether a notification was marked', async () => {
-    sql.query.mockResolvedValueOnce({ affectedRows: 1 }).mockResolvedValueOnce({ affectedRows: 0 });
-
-    expect(await notificationRepo.markViewed('u1', 'n1')).toBe(true);
-    expect(await notificationRepo.markViewed('u1', 'n2')).toBe(false);
-    expect(call(sql.query).params).toEqual(['n1', 'u1']);
+  it('finds one by id, or null', async () => {
+    expect(await notificationRepo.findById('nope')).toBeNull();
+    expect(call(sql.queryOne).params).toEqual(['nope']);
   });
 
-  it('marks all of one patient’s unread notifications', async () => {
-    await notificationRepo.markAllViewed('u1');
-    expect(call(sql.query).text).toContain("WHERE userId = ? AND status = 'sent'");
+  it('checks whether a notice of one type was already sent for a check-in', async () => {
+    sql.queryOne.mockResolvedValueOnce({ found: 1 }).mockResolvedValueOnce(null);
+
+    expect(await notificationRepo.hasForEntry('u1', 'q1', 'almost-up')).toBe(true);
+    expect(await notificationRepo.hasForEntry('u1', 'q1', 'almost-up')).toBe(false);
+    expect(call(sql.queryOne).params).toEqual(['u1', 'q1', 'almost-up']);
+  });
+
+  it('marks one read and returns it', async () => {
+    sql.queryOne.mockResolvedValue({ id: 'n1', read: 1 });
+
+    const updated = await notificationRepo.update('n1', { read: true });
+
+    expect(call(sql.query).params).toEqual([{ status: 'viewed' }, 'n1']);
+    expect(updated).toEqual({ id: 'n1', read: true });
+  });
+
+  it('marks all of a patient’s, or all of one check-in’s, as read', async () => {
+    await notificationRepo.markAllRead('u1');
+    await notificationRepo.markEntryRead('q1');
+
+    expect(call(sql.query, 0).text).toContain("WHERE userId = ? AND status = 'sent'");
+    expect(call(sql.query, 1)).toMatchObject({ params: ['q1'] });
+    expect(call(sql.query, 1).text).toContain("WHERE entryId = ? AND status = 'sent'");
   });
 });

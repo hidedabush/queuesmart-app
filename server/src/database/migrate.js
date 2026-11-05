@@ -18,6 +18,7 @@ function demoData() {
     users: [...base.users, ...sample.users],
     queueEntries: [...base.queueEntries, ...sample.queueEntries],
     history: [...base.history, ...sample.history],
+    notifications: [...base.notifications, ...sample.notifications],
   };
 }
 

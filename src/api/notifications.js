@@ -1,21 +1,21 @@
 import { request } from './client';
 
 /**
- * Notifications API (docs/A4-database-design.txt section 5). The patient
- * dashboard reads the result through ServicesStore.
+ * Notifications API (docs/A3-api-spec.txt section 6). The patient dashboard
+ * reads the result through ServicesStore.
  */
 
-// GET /notifications/me: newest first, each 'sent' or 'viewed'.
+// GET /notifications/me: newest first, each with `read`.
 export async function listMine() {
   return (await request('GET', '/notifications/me')).notifications;
 }
 
-// PATCH /notifications/:id/viewed
-export async function markViewed(id) {
-  await request('PATCH', `/notifications/${encodeURIComponent(id)}/viewed`);
+// PATCH /notifications/:id/read
+export async function markRead(id) {
+  await request('PATCH', `/notifications/${encodeURIComponent(id)}/read`);
 }
 
-// PATCH /notifications/me/viewed
-export async function markAllViewed() {
-  await request('PATCH', '/notifications/me/viewed');
+// POST /notifications/me/read-all
+export async function markAllRead() {
+  await request('POST', '/notifications/me/read-all');
 }

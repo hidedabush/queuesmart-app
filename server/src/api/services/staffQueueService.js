@@ -2,8 +2,8 @@ import * as queueRepo from '../../database/repositories/queueRepo.js';
 import * as servicesRepo from '../../database/repositories/servicesRepo.js';
 import * as userRepo from '../../database/repositories/userRepo.js';
 import { conflict, notFound } from '../errors.js';
-import { notify } from './notificationService.js';
-import { getOrderedPatientLine, leaveLine } from './queueService.js';
+import { notifyCalled } from '../notifications/notificationService.js';
+import { announceLineChange, getOrderedPatientLine, leaveLine } from './queueService.js';
 
 // Front desk (staff) side of the queue: docs/A3-api-spec.txt section 5.
 
@@ -80,7 +80,8 @@ export async function callNext(serviceId) {
   if (!next) throw conflict('empty', 'Nobody is waiting in this line.');
 
   const called = await queueRepo.update(next.id, { status: 'called', calledAt: Date.now() });
-  await notify(called.userId, `${service.name}: it is your turn`, 'Please come to the front desk now.');
+  await notifyCalled(called, service);
+  await announceLineChange(serviceId);
 
   return { called: await toLineEntry(called, 0) };
 }
@@ -88,7 +89,7 @@ export async function callNext(serviceId) {
 // POST /services/:id/queue/called  { outcome: 'seen' | 'no-show' }  ->  { resolved }
 // 409 nothing-called
 export async function resolveCalled(serviceId, outcome) {
-  const service = await getServiceOrThrow(serviceId);
+  await getServiceOrThrow(serviceId);
 
   const called = await queueRepo.findCalled(serviceId);
   if (!called) throw conflict('nothing-called', 'Nobody is being called for this line.');
@@ -96,13 +97,6 @@ export async function resolveCalled(serviceId, outcome) {
   // HISTORY: leaveLine writes the history row. Patient cancellations go
   // through queueService.cancelQueue, so never record the same entry twice.
   await leaveLine(called, outcome);
-  if (outcome === 'no-show') {
-    await notify(
-      called.userId,
-      `${service.name}: marked as a no-show`,
-      'You were not at the desk when called. Check in again if you still need a visit.'
-    );
-  }
 
   return { resolved: await toLineEntry(called, 0) };
 }
@@ -130,6 +124,7 @@ export async function moveEntry(entryId, { direction, priority }) {
   } else {
     await queueRepo.update(entry.id, { priority });
   }
+  await announceLineChange(entry.serviceId);
 
   return { waiting: await waitingLine(entry.serviceId) };
 }
@@ -140,10 +135,5 @@ export async function removeEntry(entryId) {
 
   // HISTORY: same rule as in resolveCalled. Staff removals are 'removed'.
   await leaveLine(entry, 'removed');
-  const service = await servicesRepo.findById(entry.serviceId);
-  await notify(
-    entry.userId,
-    `${service.name}: removed from the line`,
-    'The front desk took you out of this line. Ask at the desk if this is a mistake.'
-  );
+  await announceLineChange(entry.serviceId);
 }

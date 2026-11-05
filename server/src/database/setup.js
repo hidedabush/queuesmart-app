@@ -71,7 +71,11 @@ export function toTableRows({ users = [], services = [], queueEntries = [], hist
       calledAt: entry.calledAt,
       leftAt: entry.leftAt ?? null,
     })),
-    notifications,
+    notifications: notifications.map(({ read, channels, ...notification }) => ({
+      ...notification,
+      channels: JSON.stringify(channels),
+      status: read ? 'viewed' : 'sent',
+    })),
     visit_history: history,
   };
 }

@@ -137,7 +137,8 @@ an `ALTER TABLE` in Workbench to keep the data.
 - 15 patients waiting in line
 - 8 visits that already finished today (served, no-show, canceled, removed),
   so the admin dashboard's statistics have numbers
-- 3 past visits and 2 read notifications for the demo patient
+- the notifications those finished visits were sent, already read
+- 3 past visits for the demo patient
 
 | Account | Email | Password |
 | --- | --- | --- |

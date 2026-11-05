@@ -117,7 +117,7 @@ function NotificationItem({ item, onDismiss }) {
 export default function UserDashboard() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { services, notifications: sent, markNotificationViewed, markAllNotificationsViewed } =
+  const { services, notifications: sent, markNotificationRead, markAllNotificationsRead } =
     useServices();
   const { activeQueue } = useQueue();
   const [notificationsVisible, setNotificationsVisible] = useState(false);
@@ -168,14 +168,14 @@ export default function UserDashboard() {
   // worked out here from the open visit types.
   const notifications = useMemo(() => {
     const items = sent
-      .filter((item) => item.status === 'sent')
+      .filter((item) => !item.read)
       .map((item) => ({
         id: item.id,
         fromServer: true,
         title: item.title,
         message: item.message,
         time: formatSentAt(item.createdAt),
-        urgent: item.title.endsWith('it is your turn'),
+        urgent: item.type === 'called',
       }));
 
     openServices.slice(0, activeQueue ? 1 : 2).forEach((item) => {
@@ -191,17 +191,17 @@ export default function UserDashboard() {
     return items.filter((item) => !dismissedNotifications.includes(item.id));
   }, [activeQueue, dismissedNotifications, openServices, sent]);
 
-  // Server notifications are saved as viewed; office updates are only hidden.
+  // Server notifications are saved as read; office updates are only hidden.
   const dismissNotification = (id) => {
     if (notifications.some((item) => item.id === id && item.fromServer)) {
-      markNotificationViewed(id);
+      markNotificationRead(id);
       return;
     }
     setDismissedNotifications((current) => [...current, id]);
   };
 
   const dismissAllNotifications = () => {
-    if (notifications.some((item) => item.fromServer)) markAllNotificationsViewed();
+    if (notifications.some((item) => item.fromServer)) markAllNotificationsRead();
     setDismissedNotifications((current) => [
       ...new Set([
         ...current,

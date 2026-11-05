@@ -2,6 +2,7 @@
 // that takes same-day walk-in visits. All names are fictional.
 
 import { scryptSync } from 'node:crypto';
+import { calledMessage, joinedMessage } from '../api/notifications/messages.js';
 
 const SEED_SERVICES = [
   {
@@ -153,17 +154,7 @@ export function seedTables() {
     services: SEED_SERVICES.map((row) => ({ ...row })),
     queueEntries,
     history,
-    // Messages the demo patient was sent on past visits, already read.
-    notifications: history
-      .filter((row) => row.outcome === 'seen')
-      .map((row, index) => ({
-        id: `n-seed-${index + 1}`,
-        userId: 'u-patient',
-        title: `${row.serviceName}: it is your turn`,
-        message: 'Please come to the front desk now.',
-        createdAt: row.calledAt,
-        status: 'viewed',
-      })),
+    notifications: [],
   };
 }
 
@@ -189,6 +180,7 @@ export function sampleTables(now = Date.now()) {
   const users = [];
   const queueEntries = [];
   const history = [];
+  const notifications = [];
 
   FINISHED_TODAY.forEach(([serviceId, outcome, waitMinutes], index) => {
     const number = index + 1;
@@ -229,7 +221,24 @@ export function sampleTables(now = Date.now()) {
       leftAt,
       outcome,
     });
+
+    // What they were sent during the visit, all read by now.
+    const sent = [['joined', joinedAt, joinedMessage(services[serviceId], 2, { low: 10, high: 20 })]];
+    if (calledAt) sent.push(['called', calledAt, calledMessage(services[serviceId])]);
+    sent.forEach(([type, createdAt, text]) => {
+      notifications.push({
+        id: `n-sample-${number}-${type}`,
+        userId,
+        type,
+        ...text,
+        serviceId,
+        entryId: `q-sample-${number}`,
+        read: true,
+        createdAt,
+        channels: ['in-app', 'sms'],
+      });
+    });
   });
 
-  return { users, queueEntries, history };
+  return { users, queueEntries, history, notifications };
 }

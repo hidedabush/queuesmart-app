@@ -2,37 +2,43 @@ import * as db from '../db.js';
 
 // Test stand-in for src/database/repositories/notificationRepo.js.
 
-export async function insert({ userId, title, message }) {
-  return db.insert('notifications', {
-    id: db.nextId('n'),
-    userId,
-    title,
-    message,
-    createdAt: Date.now(),
-    status: 'sent',
-  });
-}
-
-// Newest first. Rows made in the same millisecond keep their insert order.
+// Newest first.
 export async function listByUser(userId) {
   return db
     .all('notifications')
-    .map((row, index) => ({ row, index }))
-    .filter(({ row }) => row.userId === userId)
-    .sort((a, b) => b.row.createdAt - a.row.createdAt || b.index - a.index)
-    .slice(0, 20)
-    .map(({ row }) => row);
-}
-
-export async function markViewed(userId, id) {
-  const row = db.find('notifications', id);
-  if (!row || row.userId !== userId) return false;
-  db.update('notifications', id, { status: 'viewed' });
-  return true;
-}
-
-export async function markAllViewed(userId) {
-  db.all('notifications')
     .filter((row) => row.userId === userId)
-    .forEach((row) => db.update('notifications', row.id, { status: 'viewed' }));
+    .reverse()
+    .sort((a, b) => b.createdAt - a.createdAt);
+}
+
+export async function findById(id) {
+  return db.find('notifications', id);
+}
+
+// Has this patient already been sent this kind of notice for this check-in?
+export async function hasForEntry(userId, entryId, type) {
+  return db
+    .all('notifications')
+    .some((row) => row.userId === userId && row.entryId === entryId && row.type === type);
+}
+
+export async function insert(row) {
+  return db.insert('notifications', { ...row, id: db.nextId('n') });
+}
+
+export async function update(id, patch) {
+  return db.update('notifications', id, patch);
+}
+
+export async function markAllRead(userId) {
+  db.all('notifications')
+    .filter((row) => row.userId === userId && !row.read)
+    .forEach((row) => db.update('notifications', row.id, { read: true }));
+}
+
+// Everything sent for one check-in.
+export async function markEntryRead(entryId) {
+  db.all('notifications')
+    .filter((row) => row.entryId === entryId && !row.read)
+    .forEach((row) => db.update('notifications', row.id, { read: true }));
 }

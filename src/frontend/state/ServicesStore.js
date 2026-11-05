@@ -276,22 +276,22 @@ export function ServicesProvider({ children }) {
       // Connected to /notifications. Marking is shown at once and then saved;
       // the next read puts back anything the server did not accept.
       notifications,
-      markNotificationViewed: async (id) => {
+      markNotificationRead: async (id) => {
         setNotifications((current) =>
-          current.map((item) => (item.id === id ? { ...item, status: 'viewed' } : item))
+          current.map((item) => (item.id === id ? { ...item, read: true } : item))
         );
         try {
-          await notificationsApi.markViewed(id);
+          await notificationsApi.markRead(id);
         } catch (error) {
           if (!(error instanceof ApiError)) throw error;
           lostSession(error);
         }
         await refreshNotifications();
       },
-      markAllNotificationsViewed: async () => {
-        setNotifications((current) => current.map((item) => ({ ...item, status: 'viewed' })));
+      markAllNotificationsRead: async () => {
+        setNotifications((current) => current.map((item) => ({ ...item, read: true })));
         try {
-          await notificationsApi.markAllViewed();
+          await notificationsApi.markAllRead();
         } catch (error) {
           if (!(error instanceof ApiError)) throw error;
           lostSession(error);

@@ -221,21 +221,52 @@ describe("queueRepo", () => {
 });
 
 describe("notificationRepo", () => {
-  it("saves, lists newest first and marks notifications viewed", async () => {
-    const older = await notificationRepo.insert({ userId: user.id, title: "First", message: "One." });
-    await new Promise((resolve) => setTimeout(resolve, 5));
-    const newer = await notificationRepo.insert({ userId: user.id, title: "Second", message: "Two." });
+  const notice = (type, createdAt) => ({
+    userId: user.id,
+    type,
+    title: `${serviceName}: ${type}`,
+    message: "Test notice.",
+    serviceId: service.id,
+    entryId: entry.id,
+    read: false,
+    createdAt,
+    channels: ["in-app", "sms"],
+  });
+
+  it("saves, lists newest first and marks notices read", async () => {
+    const createdAt = Date.now();
+    // Same millisecond: the later one must still come first.
+    const joined = await notificationRepo.insert(notice("joined", createdAt));
+    const almostUp = await notificationRepo.insert(notice("almost-up", createdAt));
 
     const listed = await notificationRepo.listByUser(user.id);
-    expect(listed.map((row) => row.id)).toEqual([newer.id, older.id]);
-    expect(listed[0]).toMatchObject({ status: "sent", createdAt: expect.any(Number) });
+    expect(listed.map((row) => row.id).slice(0, 2)).toEqual([almostUp.id, joined.id]);
+    expect(listed[0]).toMatchObject({ read: false, channels: ["in-app", "sms"], createdAt });
 
-    expect(await notificationRepo.markViewed(user.id, older.id)).toBe(true);
-    expect(await notificationRepo.markViewed("someone-else", newer.id)).toBe(false);
+    expect(await notificationRepo.hasForEntry(user.id, entry.id, "almost-up")).toBe(true);
+    expect(await notificationRepo.hasForEntry(user.id, entry.id, "called")).toBe(false);
 
-    await notificationRepo.markAllViewed(user.id);
+    expect(await notificationRepo.update(joined.id, { read: true })).toMatchObject({ read: true });
+    const [{ status }] = await query("SELECT status FROM notifications WHERE id = ?", [joined.id]);
+    expect(status).toBe("viewed");
+
+    await notificationRepo.markEntryRead(entry.id);
+    expect((await notificationRepo.findById(almostUp.id)).read).toBe(true);
+  });
+
+  it("marks all of a patient's notices read", async () => {
+    await notificationRepo.insert(notice("called", Date.now()));
+
+    await notificationRepo.markAllRead(user.id);
+
     const after = await notificationRepo.listByUser(user.id);
-    expect(after.every((row) => row.status === "viewed")).toBe(true);
+    expect(after.every((row) => row.read)).toBe(true);
+  });
+
+  it("refuses a type the spec does not have", async () => {
+    await expect(notificationRepo.insert(notice("removed", Date.now()))).rejects.toMatchObject({
+      code: "WARN_DATA_TRUNCATED",
+    });
   });
 });
 

@@ -54,9 +54,15 @@ export async function transaction(work) {
   }
 }
 
+let counter = 0;
+
 // Short, readable ids that stay unique across everyone sharing the database.
+// Ids made by one server sort in the order they were made (the time, then a
+// counter), so `ORDER BY createdAt, id` keeps same-millisecond rows in order.
 export function nextId(prefix) {
-  return `${prefix}${Date.now().toString(36)}${randomBytes(3).toString('hex')}`;
+  counter = (counter + 1) % 36 ** 3;
+  const time = Date.now().toString(36).padStart(9, '0');
+  return `${prefix}${time}${counter.toString(36).padStart(3, '0')}${randomBytes(2).toString('hex')}`;
 }
 
 export function close() {

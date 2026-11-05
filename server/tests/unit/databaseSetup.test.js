@@ -84,7 +84,17 @@ describe('demo data', () => {
       leftAt: null,
     });
     expect(rows.visit_history).toHaveLength(3);
-    expect(rows.notifications).toHaveLength(2);
+    expect(rows.notifications).toEqual([]);
+  });
+
+  it('stores a notification’s read flag as A4’s status', () => {
+    const rows = setup.toTableRows({
+      notifications: [{ id: 'n1', read: true, channels: ['in-app'] }, { id: 'n2', read: false, channels: [] }],
+    });
+    expect(rows.notifications).toEqual([
+      { id: 'n1', status: 'viewed', channels: '["in-app"]' },
+      { id: 'n2', status: 'sent', channels: '[]' },
+    ]);
   });
 
   it('stores preferences as JSON text', () => {
@@ -113,5 +123,8 @@ describe('demo data', () => {
       expect(['served', 'no-show', 'canceled', 'removed']).toContain(entry.status);
     });
     expect(new Set(sample.users.map((u) => u.email)).size).toBe(8);
+    // A joined notice for every visit, and a called one for each patient called.
+    expect(sample.notifications).toHaveLength(8 + 5);
+    expect(sample.notifications.every((row) => row.read && row.entryId.startsWith('q-sample-'))).toBe(true);
   });
 });

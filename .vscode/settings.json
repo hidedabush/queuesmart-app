@@ -3,5 +3,8 @@
     "source.fixAll": "explicit",
     "source.organizeImports": "explicit",
     "source.sortMembers": "explicit"
-  }
+  },
+  // The database is MySQL. The SQL Server extension checks .sql files as
+  // T-SQL and marks valid MySQL (IF NOT EXISTS, ENUM, backticks) as errors.
+  "mssql.intelliSense.enableErrorChecking": false
 }

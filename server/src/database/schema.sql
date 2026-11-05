@@ -92,19 +92,28 @@ CREATE TABLE IF NOT EXISTS queue_entries (
   INDEX ix_entries_queue_status (queueId, status, position)
 );
 
--- 6a. Notification: messages sent to a patient. Never includes the reason
--- for the visit, because it can show on a lock screen.
+-- 6a. Notification: a notice about one check-in (docs/A3-api-spec.txt
+-- section 6). Never includes the reason for the visit, because it can show on
+-- a lock screen. The API reports status as read: true | false.
 CREATE TABLE IF NOT EXISTS notifications (
   id VARCHAR(40) NOT NULL,
   userId VARCHAR(40) NOT NULL,
+  entryId VARCHAR(40) NOT NULL,
+  serviceId VARCHAR(40) NOT NULL,
+  type ENUM('joined', 'almost-up', 'called') NOT NULL,
   title VARCHAR(100) NOT NULL,
   message VARCHAR(255) NOT NULL,
+  -- ["in-app"], or ["in-app", "sms"] when the patient has a phone number.
+  channels JSON NOT NULL,
   createdAt BIGINT NOT NULL,
   status ENUM('sent', 'viewed') NOT NULL DEFAULT 'sent',
   PRIMARY KEY (id),
   CONSTRAINT fk_notifications_user FOREIGN KEY (userId)
     REFERENCES user_credentials (id) ON DELETE CASCADE,
-  INDEX ix_notifications_user (userId, createdAt)
+  CONSTRAINT fk_notifications_entry FOREIGN KEY (entryId)
+    REFERENCES queue_entries (id) ON DELETE CASCADE,
+  INDEX ix_notifications_user (userId, createdAt),
+  INDEX ix_notifications_entry (entryId, type)
 );
 
 -- 6b. History: one row per finished visit, for the patient's visit history

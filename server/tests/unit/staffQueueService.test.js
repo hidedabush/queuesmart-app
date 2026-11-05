@@ -16,6 +16,8 @@ describe('staff queue service', () => {
       .filter((row) => row.userId === userId)
       .reverse()
       .map((row) => row.title);
+  const unreadFor = (userId) =>
+    db.all('notifications').filter((row) => row.userId === userId && !row.read).length;
   const todaysStats = async (serviceId) =>
     (await statsForDate(today())).services.find((row) => row.serviceId === serviceId);
 
@@ -64,10 +66,13 @@ describe('staff queue service', () => {
   });
 
   describe('callNext', () => {
-    it('tells the called patient it is their turn', async () => {
+    it('tells the called patient it is their turn, and the next ones to head in', async () => {
       await staffQueue.callNext('s1');
 
-      expect(titlesFor('u-seed-1')).toEqual(['Sick Visit: it is your turn']);
+      expect(titlesFor('u-seed-1')).toEqual(['Sick Visit: it’s your turn']);
+      // With patient 1 called, patients 2-4 have 2 or fewer ahead of them.
+      expect(titlesFor('u-seed-4')).toEqual(['Sick Visit: head to the office']);
+      expect(titlesFor('u-seed-5')).toEqual([]);
     });
 
     it('calls the first patient and takes them out of the waiting line', async () => {
@@ -117,23 +122,22 @@ describe('staff queue service', () => {
       });
     });
 
-    it('records a no-show and tells the patient', async () => {
+    it('records a no-show', async () => {
       await staffQueue.callNext('s2');
       await staffQueue.resolveCalled('s2', 'no-show');
 
       expect(await todaysStats('s2')).toMatchObject({ served: 0, noShows: 1 });
       expect(db.find('queueEntries', 'q-seed-7').status).toBe('no-show');
-      expect(titlesFor('u-seed-7')).toEqual([
-        'Minor Injury: marked as a no-show',
-        'Minor Injury: it is your turn',
-      ]);
     });
 
-    it('sends nothing extra for a seen visit', async () => {
+    it('closes the patient’s notices once their visit is resolved', async () => {
       await staffQueue.callNext('s2');
+      expect(unreadFor('u-seed-7')).toBe(1);
+
       await staffQueue.resolveCalled('s2', 'seen');
 
-      expect(titlesFor('u-seed-7')).toEqual(['Minor Injury: it is your turn']);
+      expect(titlesFor('u-seed-7')).toEqual(['Minor Injury: it’s your turn']);
+      expect(unreadFor('u-seed-7')).toBe(0);
     });
 
     it('rejects a resolve when nobody is called', async () => {
@@ -191,7 +195,8 @@ describe('staff queue service', () => {
       expect(ids(await staffQueue.getLine('s1'))).not.toContain('q-seed-3');
       expect(await todaysStats('s1')).toMatchObject({ removed: 1, currentlyWaiting: 5 });
       expect(db.find('queueEntries', 'q-seed-3').status).toBe('removed');
-      expect(titlesFor('u-seed-3')).toEqual(['Sick Visit: removed from the line']);
+      // The line moved up, so patient 4 is now third.
+      expect(titlesFor('u-seed-4')).toEqual(['Sick Visit: head to the office']);
     });
 
     it('treats a finished entry as no longer in line', async () => {
