@@ -1,12 +1,10 @@
-// Sample rows for a primary-care provider office that takes same-day walk-in
-// visits. All names are fictional.
-//
-// - SEED_SERVICES: the five visit types. `npm run db:populate` adds them to
-//   an empty MySQL database (src/database/mock/).
-// - seedTables(): the in-memory tables every unit/API test starts from
-//   (tests/fakes/db.js).
+// Starting rows for the database (see migrate.js and the test fakes): a primary-care provider office
+// that takes same-day walk-in visits. All names are fictional.
 
-export const SEED_SERVICES = [
+import { scryptSync } from 'node:crypto';
+import { calledMessage, joinedMessage } from '../api/notifications/messages.js';
+
+const SEED_SERVICES = [
   {
     id: 's1',
     name: 'Sick Visit',
@@ -54,10 +52,54 @@ export const SEED_SERVICES = [
   },
 ];
 
-// How many patients are already waiting in each line in the tests.
-const WAITING = { s1: 6, s2: 2, s3: 4, s4: 3 };
+// Demo-only password hashes. Real accounts get a random salt at registration.
+function seedPasswordHash(password, salt) {
+  return `${salt}:${scryptSync(password, salt, 64).toString('hex')}`;
+}
 
-// Finished visits on earlier days, so the statistics have something to read.
+const SEED_USERS = [
+  {
+    id: 'u-admin',
+    name: 'QueueSmart Admin',
+    dob: '1980-01-01',
+    email: 'admin@queuesmart.test',
+    phone: null,
+    passwordHash: seedPasswordHash('Admin#2026', 'queuesmart-admin-seed'),
+    role: 'admin',
+  },
+  {
+    id: 'u-patient',
+    name: 'Demo Patient',
+    dob: '1995-03-14',
+    email: 'patient@queuesmart.test',
+    phone: '7135550101',
+    passwordHash: seedPasswordHash('Patient#2026', 'queuesmart-patient-seed'),
+    role: 'user',
+  },
+];
+
+// Everyone already in line when the server starts, so the front desk board
+// has real waiting counts. The users table (and the patient's name, date of
+// birth and login) belongs to the auth teammate; until then each entry only
+// keeps a userId placeholder.
+const waitingRoom = [
+  ['s1', 'Fever and sore throat since Tuesday'],
+  ['s1', 'Ear pain, left side'],
+  ['s1', 'Cough for about a week'],
+  ['s1', 'Itchy rash on forearm'],
+  ['s1', 'Sinus pressure and headache'],
+  ['s1', 'Stomach pain since last night'],
+  ['s2', 'Twisted ankle at soccer practice'],
+  ['s2', 'Small cut on finger, needs a look'],
+  ['s3', 'Fasting blood work for annual physical'],
+  ['s3', 'Cholesterol panel'],
+  ['s3', 'A1C check'],
+  ['s3', 'Thyroid panel'],
+  ['s4', 'Flu shot'],
+  ['s4', 'Tetanus booster'],
+  ['s4', 'Flu shot'],
+];
+
 const SEED_HISTORY = [
   ['h1', 's4', 'Vaccinations', '2026-09-28', 'seen'],
   ['h2', 's1', 'Sick Visit', '2026-08-14', 'seen'],
@@ -65,14 +107,13 @@ const SEED_HISTORY = [
 ];
 
 export function seedTables() {
-  const lines = Object.entries(WAITING).flatMap(([serviceId, count]) =>
-    Array.from({ length: count }, () => serviceId)
-  );
-  const startedAt = Date.now() - lines.length * 60_000;
+  const startedAt = Date.now() - waitingRoom.length * 60_000;
 
-  const queueEntries = lines.map((serviceId, index) => ({
+  const queueEntries = waitingRoom.map(([serviceId, reason], index) => ({
     id: `q-seed-${index + 1}`,
+    userId: `u-seed-${index + 1}`,
     serviceId,
+    reason,
     status: 'waiting',
     priority: 'normal',
     order: index + 1,
@@ -81,11 +122,12 @@ export function seedTables() {
     leftAt: null,
   }));
 
+  // Past visits for the demo patient, so statistics have something to read.
   const history = SEED_HISTORY.map(([id, serviceId, serviceName, date, outcome]) => {
     const leftAt = Date.parse(`${date}T15:00:00Z`);
     return {
       id,
-      entryId: `q-${id}`,
+      userId: 'u-patient',
       serviceId,
       serviceName,
       date,
@@ -97,8 +139,106 @@ export function seedTables() {
   });
 
   return {
+    users: [
+      ...SEED_USERS.map((row) => ({ ...row })),
+      ...waitingRoom.map((_, index) => ({
+        id: `u-seed-${index + 1}`,
+        name: `Demo Patient ${index + 1}`,
+        dob: '1990-01-01',
+        email: `seed-patient-${index + 1}@queuesmart.test`,
+        phone: null,
+        passwordHash: null,
+        role: 'user',
+      })),
+    ],
     services: SEED_SERVICES.map((row) => ({ ...row })),
     queueEntries,
     history,
+    notifications: [],
   };
+}
+
+// Visits that already finished today, so the admin dashboard's statistics
+// and the front desk have a realistic day to show. Only `npm run db:seed`
+// adds these; the tests start from seedTables() alone.
+const FINISHED_TODAY = [
+  ['s1', 'seen', 22],
+  ['s1', 'seen', 35],
+  ['s1', 'no-show', null],
+  ['s2', 'seen', 18],
+  ['s3', 'seen', 9],
+  ['s3', 'cancelled', null],
+  ['s4', 'seen', 6],
+  ['s4', 'removed', null],
+];
+
+// History outcome -> the status its queue entry ends with.
+const ENTRY_STATUS = { seen: 'served', 'no-show': 'no-show', cancelled: 'canceled', removed: 'removed' };
+
+export function sampleTables(now = Date.now()) {
+  const services = Object.fromEntries(SEED_SERVICES.map((service) => [service.id, service.name]));
+  const users = [];
+  const queueEntries = [];
+  const history = [];
+  const notifications = [];
+
+  FINISHED_TODAY.forEach(([serviceId, outcome, waitMinutes], index) => {
+    const number = index + 1;
+    const userId = `u-sample-${number}`;
+    const joinedAt = now - (4 * 60 - index * 15) * 60_000;
+    const calledAt = waitMinutes === null ? null : joinedAt + waitMinutes * 60_000;
+    const leftAt = (calledAt ?? joinedAt + 20 * 60_000) + 10 * 60_000;
+
+    users.push({
+      id: userId,
+      name: `Sample Patient ${number}`,
+      dob: `198${number}-0${number}-1${number}`,
+      email: `sample-patient-${number}@queuesmart.test`,
+      phone: `713555${String(200 + number).padStart(4, '0')}`,
+      passwordHash: null,
+      role: 'user',
+    });
+    queueEntries.push({
+      id: `q-sample-${number}`,
+      userId,
+      serviceId,
+      reason: 'Earlier visit today',
+      status: ENTRY_STATUS[outcome],
+      priority: 'normal',
+      order: 100 + number,
+      arrivedAt: joinedAt,
+      calledAt,
+      leftAt,
+    });
+    history.push({
+      id: `h-sample-${number}`,
+      userId,
+      serviceId,
+      serviceName: services[serviceId],
+      date: new Date(leftAt).toISOString().slice(0, 10),
+      joinedAt,
+      calledAt,
+      leftAt,
+      outcome,
+    });
+
+    // What they were sent during the visit, all read by now.
+    const sent = [['joined', joinedAt, joinedMessage(services[serviceId], 2, { low: 10, high: 20 })]];
+    if (calledAt) sent.push(['called', calledAt, calledMessage(services[serviceId])]);
+    sent.forEach(([type, createdAt, text]) => {
+      notifications.push({
+        id: `n-sample-${number}-${type}`,
+        userId,
+        type,
+        ...text,
+        serviceId,
+        entryId: `q-sample-${number}`,
+        read: true,
+        createdAt,
+        channels: ['in-app', 'sms'],
+      });
+    });
+  });
+
+  return { users, queueEntries, history, notifications };
 }

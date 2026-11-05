@@ -1,4 +1,3 @@
-import jwt from 'jsonwebtoken';
 import request from 'supertest';
 
 process.env.JWT_SECRET = 'test-only-secret-for-queuesmart';
@@ -11,19 +10,6 @@ export const app = createApp();
 // supertest request against the app, without opening a port.
 export const api = () => request(app);
 
-// A client that sends a bearer token for the given role, as the sign-in
-// module would hand out.
-export function signedIn(role = 'admin') {
-  const token = jwt.sign({ sub: `u-${role}`, role }, process.env.JWT_SECRET);
-  const auth = (req) => req.set('Authorization', `Bearer ${token}`);
-  return {
-    get: (path) => auth(api().get(path)),
-    post: (path) => auth(api().post(path)),
-    patch: (path) => auth(api().patch(path)),
-    delete: (path) => auth(api().delete(path)),
-  };
-}
-
 export const validService = (overrides = {}) => ({
   name: 'Allergy Shots',
   description: 'Scheduled allergy injections.',
@@ -33,21 +19,23 @@ export const validService = (overrides = {}) => ({
   ...overrides,
 });
 
-// Puts a patient in a line directly in the in-memory tables.
+// Puts a patient in a line directly in the database. Joining through the API
+// belongs to the queue module, which a teammate is building.
 export function addToLine(serviceId, status = 'waiting') {
   return db.insert('queueEntries', {
     id: db.nextId('q'),
+    userId: 'u-test',
     serviceId,
+    reason: 'Test visit',
     status,
     priority: 'normal',
     order: 999,
     arrivedAt: Date.now(),
     calledAt: status === 'called' ? Date.now() : null,
-    leftAt: null,
   });
 }
 
-// Removes everyone from a line directly in the in-memory tables.
+// Removes everyone from a line directly in the database.
 export function clearLine(serviceId) {
   db.all('queueEntries')
     .filter((entry) => entry.serviceId === serviceId)

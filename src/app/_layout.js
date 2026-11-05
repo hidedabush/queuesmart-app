@@ -6,6 +6,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { ToastProvider } from '../frontend/components/Toast';
 import { ServicesProvider, useServices } from '../frontend/state/ServicesStore';
 import { colors, headerOptions } from '../frontend/theme';
+import NotificationWatcher from '../frontend/components/NotificationWatcher';
 
 // Navigation chrome (headers, tab bar, borders) picks these up by default.
 const navigationTheme = {
@@ -82,6 +83,7 @@ export default function RootLayout() {
         <ServicesProvider>
           <ToastProvider>
             <StatusBar style="light" />
+            <NotificationWatcher />
             <AppStack />
           </ToastProvider>
         </ServicesProvider>

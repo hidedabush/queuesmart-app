@@ -1,33 +1,44 @@
-import { ensureServices, fillToday, makeRandom } from './mock/activity.js';
+import * as servicesRepo from './repositories/servicesRepo.js';
+import { addWaiting, makeRandom, pastVisits } from './mock/activity.js';
 import { close } from './mysql.js';
-import { counts, createTables } from './setup.js';
+import { counts, createTables, demoData, insertAll, isEmpty } from './setup.js';
 
 // npm run db:populate [-- --seed 42]
 //
-// Adds sample data on top of whatever is there, so an empty database fills
-// up as you go: the five sample visit types (only the missing ones), then
-// for every open line a few visits that already ended today and a few
-// patients still waiting. All times are relative to now, so the admin
-// dashboard's "today" always has numbers. Run it again to add more.
+// Adds sample data on top of whatever is there, so a database that starts
+// empty (npm run db:empty) fills up as you go:
+//   - an empty database first gets the demo data (npm run db:seed): the
+//     admin and demo patient accounts, the 5 visit types, people waiting
+//   - every run then adds, on each open line, a few visits that already
+//     ended today (with their history and notices) and a few patients
+//     checking in now, through the app's own check-in
+// All times are relative to now, so "today" on the admin dashboard always
+// has numbers. Run it again to add more.
 
 const args = process.argv.slice(2);
 const seedArg = args.indexOf('--seed');
 const seed = seedArg >= 0 ? Number(args[seedArg + 1]) : Date.now();
+const random = makeRandom(seed);
 
 try {
   await createTables();
 
-  const added = await ensureServices();
-  console.log(added.length ? `Added visit types: ${added.map((s) => s.name).join(', ')}` : 'Visit types already there.');
+  if (await isEmpty()) {
+    await insertAll(demoData());
+    console.log('The database was empty, so the demo data (npm run db:seed) went in first.');
+  }
 
-  const summary = await fillToday({ random: makeRandom(seed) });
-  console.log(`Played ${summary.finished} visits that ended today, and ${summary.waiting} patients are now waiting.`);
-  for (const { service, code, message } of summary.refused) {
-    console.log(`  refused by the database (${service}): ${code} - ${message}`);
+  const past = pastVisits({ services: await servicesRepo.list(), random });
+  await insertAll(past);
+  console.log(`Added ${past.history.length} visits that ended today.`);
+
+  const now = await addWaiting({ random });
+  console.log(`${now.waiting} new patients checked in.`);
+  for (const { service, code, message } of now.refused) {
+    console.log(`  refused (${service}): ${code} - ${message}`);
   }
 
   for (const [table, count] of Object.entries(await counts())) console.log(`  ${table}: ${count} rows`);
-  console.log(`(seed ${seed}; pass --seed ${seed} to repeat this run on an empty database)`);
 } catch (error) {
   console.error(error.message);
   process.exitCode = 1;

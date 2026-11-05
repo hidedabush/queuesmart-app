@@ -36,6 +36,7 @@ export function ServicesProvider({ children }) {
   const [role, setRole] = useState(null);
   const [history, setHistory] = useState([]);
   const [notifications, setNotifications] = useState([]);
+  const [notificationsLoaded, setNotificationsLoaded] = useState(false);
   const [activeQueue, setActiveQueue] = useState(null);
   const [queueLoading, setQueueLoading] = useState(true);
   const [queueError, setQueueError] = useState(null);
@@ -54,6 +55,7 @@ export function ServicesProvider({ children }) {
     setStats(null);
     setHistory([]);
     setNotifications([]);
+    setNotificationsLoaded(false);
     setLines({});
   }, []);
 
@@ -140,6 +142,7 @@ export function ServicesProvider({ children }) {
   const refreshNotifications = useCallback(async () => {
     try {
       setNotifications(await notificationsApi.listMine());
+      setNotificationsLoaded(true);
     } catch (error) {
       if (!(error instanceof ApiError)) throw error;
       lostSession(error);
@@ -276,6 +279,7 @@ export function ServicesProvider({ children }) {
       // Connected to /notifications. Marking is shown at once and then saved;
       // the next read puts back anything the server did not accept.
       notifications,
+      notificationsLoaded,
       markNotificationRead: async (id) => {
         setNotifications((current) =>
           current.map((item) => (item.id === id ? { ...item, read: true } : item))
@@ -334,6 +338,7 @@ export function ServicesProvider({ children }) {
     lines,
     lostSession,
     notifications,
+    notificationsLoaded,
     patient,
     queueError,
     queueLoading,

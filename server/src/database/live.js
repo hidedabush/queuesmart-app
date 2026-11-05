@@ -1,15 +1,17 @@
 import { statsForDate, today } from '../api/services/statsService.js';
-import { ensureServices, makeRandom, tick } from './mock/activity.js';
+import { makeRandom, tick } from './mock/activity.js';
 import { close } from './mysql.js';
-import { createTables } from './setup.js';
+import { createTables, demoData, insertAll, isEmpty } from './setup.js';
 
 // npm run db:live [-- --every 3 --ticks 50 --seed 7]
 //
 // Keeps the database moving like a real morning at the front desk: every
 // few seconds a patient checks in, is called, is seen (or is a no-show) or
-// cancels, stamped with the current time. The triggers check each step and
-// write the history, so GET /stats and the admin dashboard change while you
-// watch. Stop with Ctrl+C. --ticks stops by itself after that many events.
+// cancels, through the app's own queue services, so history and notices
+// are written as for a real patient and the triggers check every step.
+// GET /stats, the admin dashboard and the front desk change while you
+// watch. An empty database gets the demo data first. Stop with Ctrl+C;
+// --ticks stops by itself after that many events.
 
 const args = process.argv.slice(2);
 const option = (name, fallback) => {
@@ -24,10 +26,10 @@ const random = makeRandom(option('seed', Date.now()));
 const LABELS = {
   joined: 'checked in to',
   called: 'called for',
-  served: 'seen in',
+  seen: 'seen in',
   'no-show': 'no-show for',
-  canceled: 'cancelled',
-  refused: 'REFUSED by the database for',
+  cancelled: 'cancelled',
+  refused: 'REFUSED for',
   idle: 'no visit types yet',
 };
 
@@ -51,7 +53,7 @@ process.on('SIGINT', () => {
 
 try {
   await createTables();
-  await ensureServices();
+  if (await isEmpty()) await insertAll(demoData());
   console.log(`Live mock data: one event every ${everyMs / 1000}s. Ctrl+C to stop.`);
 
   for (let count = 1; count <= ticks && !stopping; count += 1) {

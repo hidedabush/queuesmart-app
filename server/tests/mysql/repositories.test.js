@@ -1,276 +1,299 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { close, nextId, query, queryOne } from '../../src/database/mysql.js';
-import * as historyRepo from '../../src/database/repositories/historyRepo.js';
-import * as queueRepo from '../../src/database/repositories/queueRepo.js';
-import * as servicesRepo from '../../src/database/repositories/servicesRepo.js';
-import { signalOf } from '../../src/database/signals.js';
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { close, nextId, query } from "../../src/database/mysql.js";
+import * as historyRepo from "../../src/database/repositories/historyRepo.js";
+import * as notificationRepo from "../../src/database/repositories/notificationRepo.js";
+import * as queueRepo from "../../src/database/repositories/queueRepo.js";
+import * as servicesRepo from "../../src/database/repositories/servicesRepo.js";
+import * as userRepo from "../../src/database/repositories/userRepo.js";
 
-// npm run test:mysql: the real repositories and triggers against
-// DATABASE_URL. Needs `npm run db:migrate` first. Only touches visit types it
-// creates (named "Test <tag> ...") and deletes them, and their history, at
-// the end.
-const tag = nextId('test');
-const prefix = `Test ${tag}`;
+// Runs against the team's shared database, so it only touches rows it created
+// and deletes them at the end. Needs `npm run db:migrate` first.
+const tag = nextId("test");
+const email = `${tag}@queuesmart.test`;
+const serviceName = `Test ${tag}`;
+
+let user;
+let service;
+let entry;
+
+const queueEntry = (overrides = {}) => ({
+  userId: user.id,
+  serviceId: service.id,
+  reason: "Repository test",
+  status: "waiting",
+  priority: "normal",
+  order: 1,
+  arrivedAt: Date.now(),
+  calledAt: null,
+  ...overrides,
+});
 
 const newService = (overrides = {}) =>
   servicesRepo.insert({
-    name: `${prefix} ${nextId('x')}`,
-    description: 'Created by the database tests.',
+    name: `${serviceName} ${nextId("x")}`,
+    description: "Created by the repository tests.",
     expectedDuration: 10,
-    priority: 'low',
+    priority: "low",
     capacity: 5,
     ...overrides,
   });
 
-// The trigger's code, e.g. 'full', from a refused write.
-const refusedWith = async (promise) => {
-  const error = await promise.then(
-    () => null,
-    (caught) => caught
-  );
-  expect(error, 'the database should have refused this').not.toBeNull();
-  return signalOf(error)?.code ?? error.code;
-};
+const newUser = (overrides = {}) =>
+  userRepo.insert({
+    name: "Repo Test",
+    dob: "1990-02-03",
+    email: `${nextId("t")}@queuesmart.test`,
+    passwordHash: null,
+    role: "user",
+    ...overrides,
+  });
 
-const historyOf = (entryId) => queryOne('SELECT * FROM visit_history WHERE entryId = ?', [entryId]);
-
-let service;
+const extraUsers = [];
 
 beforeAll(async () => {
-  service = await newService();
+  user = await newUser({ email, phone: "7135550000" });
+  service = await newService({ name: serviceName });
+  entry = await queueRepo.insert(queueEntry());
 });
 
 afterAll(async () => {
-  const mine = await query('SELECT id FROM services WHERE name LIKE ?', [`${prefix}%`]);
-  const ids = mine.map((row) => row.id);
-  if (ids.length > 0) {
-    // Empty the lines first: the delete trigger refuses a line with patients.
-    await query(
-      `UPDATE queue_entries e JOIN queues q ON q.id = e.queueId
-       SET e.status = 'removed', e.leftAt = GREATEST(e.joinedAt, ROUND(UNIX_TIMESTAMP(NOW(3)) * 1000))
-       WHERE q.serviceId IN (?) AND e.status IN ('waiting', 'called')`,
-      [ids]
-    );
-    await query('DELETE FROM services WHERE id IN (?)', [ids]);
-    await query('DELETE FROM visit_history WHERE serviceId IN (?)', [ids]);
-  }
+  // Deleting credentials removes the profile, entries, notifications and
+  // history (CASCADE). That empties the lines first, because a trigger
+  // refuses to delete a service while anyone is still in its line; deleting
+  // the service then removes its queue.
+  await query("DELETE FROM user_credentials WHERE id IN (?)", [[user.id, ...extraUsers]]);
+  await query("DELETE FROM services WHERE name LIKE ?", [`${serviceName}%`]);
   await close();
 });
 
-describe('services and their queue', () => {
-  it('a trigger creates an open queue for every new service', async () => {
-    const queue = await queryOne('SELECT * FROM queues WHERE serviceId = ?', [service.id]);
-    expect(queue).toMatchObject({ id: `queue-${service.id}`, status: 'open' });
-    expect((await servicesRepo.findById(service.id)).isOpen).toBe(true);
-  });
-
-  it('a service created closed is closed from the start', async () => {
-    const closed = await newService({ isOpen: false });
-    expect((await servicesRepo.findById(closed.id)).isOpen).toBe(false);
-  });
-
-  it('opens and closes through the queue, and updates fields', async () => {
-    expect((await servicesRepo.update(service.id, { isOpen: false })).isOpen).toBe(false);
-    expect((await servicesRepo.update(service.id, { isOpen: true, capacity: 6 })).capacity).toBe(6);
-  });
-
-  it('lists the service and finds its name ignoring case, except the row being edited', async () => {
-    expect((await servicesRepo.list()).map((row) => row.id)).toContain(service.id);
-    expect((await servicesRepo.findByName(service.name.toUpperCase())).id).toBe(service.id);
-    expect(await servicesRepo.findByName(service.name, service.id)).toBeNull();
-  });
-
-  it('refuses values outside the column rules', async () => {
-    expect(await refusedWith(newService({ expectedDuration: 500 }))).toBe('ER_CHECK_CONSTRAINT_VIOLATED');
-    expect(await refusedWith(newService({ capacity: 0 }))).toBe('ER_CHECK_CONSTRAINT_VIOLATED');
-    expect(await refusedWith(newService({ name: 'ab' }))).toBe('ER_CHECK_CONSTRAINT_VIOLATED');
-    expect(await refusedWith(newService({ priority: 'urgent' }))).toBe('WARN_DATA_TRUNCATED');
-    expect(await refusedWith(newService({ name: service.name }))).toBe('ER_DUP_ENTRY');
-  });
-
-  it('a refused service leaves no queue behind', async () => {
-    const before = await queryOne('SELECT COUNT(*) AS count FROM queues');
-    await refusedWith(newService({ name: service.name }));
-    expect(await queryOne('SELECT COUNT(*) AS count FROM queues')).toEqual(before);
-  });
-});
-
-describe('joining a line', () => {
-  it('fills in the next position and the arrival time', async () => {
-    const line = await newService();
-    const first = await queueRepo.join(line.id);
-    const second = await queueRepo.join(line.id, { arrivedAt: first.arrivedAt + 1000 });
-
-    expect(first).toMatchObject({ serviceId: line.id, status: 'waiting', order: 1, leftAt: null });
-    expect(Math.abs(first.arrivedAt - Date.now())).toBeLessThan(60_000);
-    expect(second.order).toBe(2);
-    expect((await queueRepo.listWaiting(line.id)).map((row) => row.id)).toEqual([first.id, second.id]);
-  });
-
-  it('lists urgent patients first', async () => {
-    const line = await newService();
-    const normal = await queueRepo.join(line.id);
-    const urgent = await queueRepo.join(line.id, { priority: 'urgent' });
-    expect((await queueRepo.listWaiting(line.id)).map((row) => row.id)).toEqual([urgent.id, normal.id]);
-  });
-
-  it('refuses a closed line', async () => {
-    const closed = await newService({ isOpen: false });
-    expect(await refusedWith(queueRepo.join(closed.id))).toBe('closed');
-  });
-
-  it('refuses a full line', async () => {
-    const small = await newService({ capacity: 2 });
-    await queueRepo.join(small.id);
-    await queueRepo.join(small.id);
-    expect(await refusedWith(queueRepo.join(small.id))).toBe('full');
-  });
-
-  it('refuses an entry that starts already finished', async () => {
-    const code = await refusedWith(
-      query('INSERT INTO queue_entries SET ?', [
-        { id: nextId('q'), queueId: `queue-${service.id}`, status: 'served', leftAt: Date.now() },
-      ])
-    );
-    expect(code).toBe('not-in-line');
-  });
-
-  it('refuses a queue that does not exist', async () => {
-    expect(await refusedWith(queueRepo.join('nope'))).toBe('ER_NO_REFERENCED_ROW_2');
-  });
-});
-
-describe('moving through the line', () => {
-  it('call -> seen stamps the times and writes a history row', async () => {
-    const line = await newService();
-    const entry = await queueRepo.join(line.id, { arrivedAt: Date.now() - 20 * 60_000 });
-
-    const called = await queueRepo.call(entry.id);
-    expect(called.status).toBe('called');
-    expect(called.calledAt).toBeGreaterThanOrEqual(entry.arrivedAt);
-    expect((await queueRepo.findCalled(line.id)).id).toBe(entry.id);
-
-    const finished = await queueRepo.finish(entry.id, 'served');
-    expect(finished.leftAt).toBeGreaterThanOrEqual(called.calledAt);
-    expect(await queueRepo.findCalled(line.id)).toBeNull();
-
-    expect(await historyOf(entry.id)).toMatchObject({
-      id: `h-${entry.id}`,
-      serviceId: line.id,
-      serviceName: line.name,
-      date: new Date(finished.leftAt).toISOString().slice(0, 10),
-      joinedAt: entry.arrivedAt,
-      calledAt: called.calledAt,
-      leftAt: finished.leftAt,
-      outcome: 'seen',
+describe("userRepo", () => {
+  it("reads credentials and profile as one user", async () => {
+    expect(await userRepo.findById(user.id)).toMatchObject({
+      email,
+      name: "Repo Test",
+      dob: "1990-02-03",
+      phone: "7135550000",
+      role: "user",
+      passwordHash: null,
     });
   });
 
-  it('maps every way out of the line to its history outcome', async () => {
-    const line = await newService({ capacity: 10 });
-    const outcomes = { canceled: 'cancelled', removed: 'removed' };
-    for (const [status, outcome] of Object.entries(outcomes)) {
-      const entry = await queueRepo.join(line.id);
-      await queueRepo.finish(entry.id, status);
-      expect((await historyOf(entry.id)).outcome).toBe(outcome);
-    }
-    const noShow = await queueRepo.join(line.id);
-    await queueRepo.call(noShow.id);
-    await queueRepo.finish(noShow.id, 'no-show');
-    expect((await historyOf(noShow.id)).outcome).toBe('no-show');
+  it("finds an email ignoring case and spaces", async () => {
+    const found = await userRepo.findByEmail(`  ${email.toUpperCase()} `);
+    expect(found.id).toBe(user.id);
   });
 
-  it('allows one called patient per queue', async () => {
-    const line = await newService();
-    const [first, second] = [await queueRepo.join(line.id), await queueRepo.join(line.id)];
-    await queueRepo.call(first.id);
-    expect(await refusedWith(queueRepo.call(second.id))).toBe('ER_DUP_ENTRY');
+  it("returns null for an unknown user", async () => {
+    expect(await userRepo.findById("nope")).toBeNull();
+    expect(await userRepo.findByEmail("nobody@queuesmart.test")).toBeNull();
   });
 
-  it('only the called patient can be seen or a no-show', async () => {
-    const line = await newService();
-    const entry = await queueRepo.join(line.id);
-    expect(await refusedWith(queueRepo.finish(entry.id, 'served'))).toBe('not-called');
-    expect(await refusedWith(queueRepo.finish(entry.id, 'no-show'))).toBe('not-called');
-    expect(await historyOf(entry.id)).toBeNull();
+  it("changes the password hash", async () => {
+    await userRepo.setPasswordHash(user.id, "salt:hash");
+    expect((await userRepo.findById(user.id)).passwordHash).toBe("salt:hash");
   });
 
-  it('a finished visit is final', async () => {
-    const line = await newService();
-    const entry = await queueRepo.join(line.id);
-    await queueRepo.finish(entry.id, 'canceled');
-    expect(await refusedWith(queueRepo.call(entry.id))).toBe('visit-finished');
-    expect(await refusedWith(queueRepo.finish(entry.id, 'removed'))).toBe('visit-finished');
+  it("refuses a second account with the same email, in any case", async () => {
+    await expect(newUser({ email: email.toUpperCase() })).rejects.toMatchObject({
+      code: "ER_DUP_ENTRY",
+    });
+    // The transaction left no half-made account behind.
+    const [{ count }] = await query("SELECT COUNT(*) AS count FROM user_credentials WHERE email = ?", [email]);
+    expect(count).toBe(1);
   });
 
-  it('refuses a visit that ends before it began', async () => {
-    const line = await newService();
-    const entry = await queueRepo.join(line.id);
-    expect(await refusedWith(queueRepo.finish(entry.id, 'canceled', entry.arrivedAt - 1000))).toBe('bad-time');
-  });
-
-  it('a place in line cannot move to another line', async () => {
-    const [a, b] = [await newService(), await newService()];
-    const entry = await queueRepo.join(a.id);
-    const code = await refusedWith(
-      query('UPDATE queue_entries SET queueId = ? WHERE id = ?', [`queue-${b.id}`, entry.id])
-    );
-    expect(code).toBe('entry-locked');
+  it("refuses a phone number that is not 10 digits", async () => {
+    await expect(newUser({ phone: "12345" })).rejects.toMatchObject({
+      code: "ER_CHECK_CONSTRAINT_VIOLATED",
+    });
   });
 });
 
-describe('rules on services that depend on the line', () => {
-  it('capacity cannot drop below the number waiting', async () => {
-    const line = await newService({ capacity: 5 });
-    await queueRepo.join(line.id);
-    await queueRepo.join(line.id);
-    await queueRepo.join(line.id);
+describe("servicesRepo", () => {
+  it("keeps isOpen in the service's queue", async () => {
+    expect((await servicesRepo.findById(service.id)).isOpen).toBe(true);
+    expect((await servicesRepo.update(service.id, { isOpen: false })).isOpen).toBe(false);
 
-    expect(await refusedWith(servicesRepo.update(line.id, { capacity: 2 }))).toBe('capacity-below-waiting');
-    expect((await servicesRepo.update(line.id, { capacity: 3 })).capacity).toBe(3);
+    const [queue] = await query("SELECT status FROM queues WHERE serviceId = ?", [service.id]);
+    expect(queue.status).toBe("closed");
+
+    await servicesRepo.update(service.id, { isOpen: true });
   });
 
-  it('a service with patients in line cannot be deleted; once empty it goes with its queue', async () => {
-    const line = await newService();
-    const entry = await queueRepo.join(line.id);
-    await queueRepo.call(entry.id);
-    expect(await refusedWith(servicesRepo.remove(line.id))).toBe('patients-in-line');
-
-    await queueRepo.finish(entry.id, 'served');
-    await servicesRepo.remove(line.id);
-
-    expect(await servicesRepo.findById(line.id)).toBeNull();
-    expect(await queueRepo.findById(entry.id)).toBeNull();
-    // The day's numbers survive the visit type.
-    expect((await historyOf(entry.id)).serviceName).toBe(line.name);
+  it("updates service fields", async () => {
+    expect((await servicesRepo.update(service.id, { capacity: 7 })).capacity).toBe(7);
   });
 
-  it('a queue cannot move to another service', async () => {
-    const other = await newService();
-    const code = await refusedWith(
-      query('UPDATE queues SET serviceId = ? WHERE serviceId = ?', [other.id, service.id])
-    );
-    expect(code).toBe('queue-locked');
+  it("includes the service in the list", async () => {
+    const ids = (await servicesRepo.list()).map((row) => row.id);
+    expect(ids).toContain(service.id);
+  });
+
+  it("finds a name ignoring case, except for the row being edited", async () => {
+    expect((await servicesRepo.findByName(serviceName.toUpperCase())).id).toBe(service.id);
+    expect(await servicesRepo.findByName(serviceName, service.id)).toBeNull();
+  });
+
+  it("refuses values outside the column rules", async () => {
+    await expect(newService({ expectedDuration: 500 })).rejects.toMatchObject({
+      code: "ER_CHECK_CONSTRAINT_VIOLATED",
+    });
+    await expect(newService({ priority: "urgent" })).rejects.toMatchObject({
+      code: "WARN_DATA_TRUNCATED",
+    });
+  });
+
+  it("removes a service with its queue and finished entries", async () => {
+    const extra = await newService();
+    const extraEntry = await queueRepo.insert(queueEntry({ serviceId: extra.id, userId: (await newUser()).id }));
+    extraUsers.push(extraEntry.userId);
+    // Only once its line is empty (trigger T3, as servicesService.deleteService).
+    await queueRepo.finish(extraEntry.id, "canceled");
+
+    await servicesRepo.remove(extra.id);
+
+    expect(await servicesRepo.findById(extra.id)).toBeNull();
+    expect(await queueRepo.findById(extraEntry.id)).toBeNull();
   });
 });
 
-describe('visit history', () => {
-  it('is read by date for the statistics', async () => {
-    const line = await newService();
-    const entry = await queueRepo.join(line.id);
-    const { leftAt } = await queueRepo.finish(entry.id, 'canceled');
-    const date = new Date(leftAt).toISOString().slice(0, 10);
-
-    expect((await historyRepo.listByDate(date)).map((row) => row.entryId)).toContain(entry.id);
+describe("queueRepo", () => {
+  it("reads an entry back with the API's names and times as numbers", async () => {
+    const found = await queueRepo.findById(entry.id);
+    expect(found).toMatchObject({
+      serviceId: service.id,
+      order: 1,
+      calledAt: null,
+      leftAt: null,
+      arrivedAt: entry.arrivedAt,
+    });
+    expect(found.arrivedAt).toEqual(expect.any(Number));
   });
 
-  it('cannot be edited', async () => {
-    const line = await newService();
-    const entry = await queueRepo.join(line.id);
-    await queueRepo.finish(entry.id, 'canceled');
-    const code = await refusedWith(
-      query("UPDATE visit_history SET outcome = 'seen' WHERE entryId = ?", [entry.id])
+  it("lists a line in order, and only waiting patients as waiting", async () => {
+    const other = await newUser();
+    extraUsers.push(other.id);
+    const second = await queueRepo.insert(
+      queueEntry({ userId: other.id, order: 2, status: "called", calledAt: Date.now() })
     );
-    expect(code).toBe('history-locked');
+
+    expect((await queueRepo.listByService(service.id)).map((row) => row.id)).toEqual([entry.id, second.id]);
+    expect((await queueRepo.listWaiting(service.id)).map((row) => row.id)).toEqual([entry.id]);
+    expect((await queueRepo.findCalled(service.id)).id).toBe(second.id);
+
+    await queueRepo.finish(second.id, "served");
+    expect(await queueRepo.findCalled(service.id)).toBeNull();
+    expect(await queueRepo.findById(second.id)).toMatchObject({
+      status: "served",
+      leftAt: expect.any(Number),
+    });
+  });
+
+  it("finds the active entry for a patient", async () => {
+    expect((await queueRepo.findActiveByUser(user.id)).id).toBe(entry.id);
+    expect(await queueRepo.findActiveByUser("nope")).toBeNull();
+  });
+
+  it("allows one active check-in per patient", async () => {
+    await expect(queueRepo.insert(queueEntry({ order: 3 }))).rejects.toMatchObject({
+      code: "ER_DUP_ENTRY",
+    });
+  });
+
+  it("allows one called patient per queue", async () => {
+    const [first, second] = [await newUser(), await newUser()];
+    extraUsers.push(first.id, second.id);
+    const calledAt = Date.now();
+    await queueRepo.insert(queueEntry({ userId: first.id, order: 4, status: "called", calledAt }));
+
+    await expect(
+      queueRepo.insert(queueEntry({ userId: second.id, order: 5, status: "called", calledAt }))
+    ).rejects.toMatchObject({ code: "ER_DUP_ENTRY" });
+  });
+
+  it("updates a column named after a SQL keyword", async () => {
+    expect((await queueRepo.update(entry.id, { order: 4 })).order).toBe(4);
+  });
+
+  it("lets a patient check in again once their entry is finished", async () => {
+    await queueRepo.finish(entry.id, "canceled");
+
+    entry = await queueRepo.insert(queueEntry({ order: 6 }));
+
+    expect((await queueRepo.findActiveByUser(user.id)).id).toBe(entry.id);
+  });
+});
+
+describe("notificationRepo", () => {
+  const notice = (type, createdAt) => ({
+    userId: user.id,
+    type,
+    title: `${serviceName}: ${type}`,
+    message: "Test notice.",
+    serviceId: service.id,
+    entryId: entry.id,
+    read: false,
+    createdAt,
+    channels: ["in-app", "sms"],
+  });
+
+  it("saves, lists newest first and marks notices read", async () => {
+    const createdAt = Date.now();
+    // Same millisecond: the later one must still come first.
+    const joined = await notificationRepo.insert(notice("joined", createdAt));
+    const almostUp = await notificationRepo.insert(notice("almost-up", createdAt));
+
+    const listed = await notificationRepo.listByUser(user.id);
+    expect(listed.map((row) => row.id).slice(0, 2)).toEqual([almostUp.id, joined.id]);
+    expect(listed[0]).toMatchObject({ read: false, channels: ["in-app", "sms"], createdAt });
+
+    expect(await notificationRepo.hasForEntry(user.id, entry.id, "almost-up")).toBe(true);
+    expect(await notificationRepo.hasForEntry(user.id, entry.id, "called")).toBe(false);
+
+    expect(await notificationRepo.update(joined.id, { read: true })).toMatchObject({ read: true });
+    const [{ status }] = await query("SELECT status FROM notifications WHERE id = ?", [joined.id]);
+    expect(status).toBe("viewed");
+
+    await notificationRepo.markEntryRead(entry.id);
+    expect((await notificationRepo.findById(almostUp.id)).read).toBe(true);
+  });
+
+  it("marks all of a patient's notices read", async () => {
+    await notificationRepo.insert(notice("called", Date.now()));
+
+    await notificationRepo.markAllRead(user.id);
+
+    const after = await notificationRepo.listByUser(user.id);
+    expect(after.every((row) => row.read)).toBe(true);
+  });
+
+  it("refuses a type the spec does not have", async () => {
+    await expect(notificationRepo.insert(notice("removed", Date.now()))).rejects.toMatchObject({
+      code: "WARN_DATA_TRUNCATED",
+    });
+  });
+});
+
+describe("historyRepo", () => {
+  it("reads rows by patient, newest first, and by date", async () => {
+    const row = (leftAt) => ({
+      userId: user.id,
+      serviceId: service.id,
+      serviceName,
+      date: "2026-01-15",
+      joinedAt: leftAt - 1000,
+      calledAt: null,
+      leftAt,
+      outcome: "seen",
+    });
+    const older = await historyRepo.insert(row(1_000_000));
+    const newer = await historyRepo.insert(row(2_000_000));
+
+    const mine = await historyRepo.listByUser(user.id);
+    expect(mine.map((item) => item.id)).toEqual([newer.id, older.id]);
+    expect(mine[0].date).toBe("2026-01-15");
+
+    const onDate = (await historyRepo.listByDate("2026-01-15")).map((item) => item.id);
+    expect(onDate).toEqual(expect.arrayContaining([older.id, newer.id]));
   });
 });

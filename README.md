@@ -101,44 +101,88 @@ it means you're one folder too shallow (or too deep) — `cd` until `dir` /
 `ls` shows a `package.json` in the current folder, then run `npx expo start`
 from there.
 
-### The database on this branch (Service Management + statistics)
+### Connect to the database (once per machine)
 
-This branch keeps only Nguyen's portion of the database: visit types
-(`services`), their lines (`queues`, `queue_entries`) and finished visits
-(`visit_history`), plus the triggers that enforce the rules and write the
-history. `docs/A4-database-design.txt` explains every table and trigger.
+The server stores its data in one MySQL database hosted on
+[Aiven](https://aiven.io), shared by the whole team. It will not start until
+it can reach that database.
 
-The scripts drop and rebuild these tables, so give the branch **a database of
-its own**, not the team's shared Aiven one. The quickest is a local MySQL in
-Docker Desktop:
+1. Ask a teammate for the connection string (it looks like
+   `mysql://USER:PASSWORD@HOST:PORT/defaultdb`). Share it privately, never in
+   git or a public chat.
+2. Copy `server/.env.example` to `server/.env` and paste it in as
+   `DATABASE_URL`. Git ignores `.env`.
+3. Run `git pull` if you do not have `server/aiven-ca.pem`. Aiven only accepts
+   encrypted connections, and the server needs this certificate to make one.
 
-```bash
-cd server
-copy .env.example .env   # DATABASE_URL already points at the local MySQL
-npm ci
-npm run db:up            # MySQL 8.4 from docker-compose.yml
-npm run db:migrate       # empty tables + triggers
-```
+Everyone sees and changes the same data, so use fictional details only. When
+a teammate adds a table to `server/src/database/schema.sql`, run `npm run
+db:migrate` from `server/`. It creates any missing tables and leaves existing
+ones alone. A change to an existing table needs `npm run db:reset` (below), or
+an `ALTER TABLE` in Workbench to keep the data.
 
-The database starts **empty** and fills up as you go:
+**Creating the database (one person, once).**
+
+1. Sign up at https://console.aiven.io and create a **MySQL** service on the
+   **Free** plan.
+2. On the service page, download the **CA certificate** to `server/aiven-ca.pem`
+   and commit it. It is public, so it is safe in git.
+3. Copy the **Service URI** into `server/.env` as `DATABASE_URL`.
+4. From `server/`, run `npm run db:seed`. This creates the tables and adds the
+   sample data below. It refuses to run once the database has data.
+
+**Sample data.** `npm run db:seed` fills an empty database with:
+
+- 5 visit types and their queues (Prescription Refill closed)
+- 15 patients waiting in line
+- 8 visits that already finished today (served, no-show, canceled, removed),
+  so the admin dashboard's statistics have numbers
+- the notifications those finished visits were sent, already read
+- 3 past visits for the demo patient
+
+| Account | Email | Password |
+| --- | --- | --- |
+| Office staff (admin) | `admin@queuesmart.test` | `Admin#2026` |
+| Demo patient | `patient@queuesmart.test` | `Patient#2026` |
+
+The other sample patients can't sign in: they were registered at the front
+desk. To start over, run `npm run db:reset`. It **deletes every table and all
+data for the whole team**, then rebuilds the tables and adds the sample data
+again. Tell the team before you run it.
+
+**Growing sample data, triggers and dumps.** The database also enforces its
+rules itself with triggers (`server/src/database/triggers.sql`, explained in
+`docs/A4-database-design.txt` section 10), so `npm run db:migrate` after
+pulling. These scripts change the data, so try them on a private database
+first (`npm run db:up` starts one in Docker; see `server/.env.example`):
 
 | Command | What it does |
 | --- | --- |
-| `npm run db:populate` | Adds sample data on top of what is there: the 5 sample visit types if missing (Prescription Refill closed), then for each open line a few visits that already ended **today** and a few patients still waiting. Run it again to add more. |
-| `npm run db:live` | Keeps it moving: every few seconds someone checks in, is called, is seen or a no-show, or cancels. Prints each event and the day's statistics. Ctrl+C stops. |
-| `npm run db:dump` | Writes the whole database (tables, rows, triggers) to `server/src/database/dump.sql`. |
-| `npm run db:load` | Replaces the tables with that dump. It also loads with `mysql ... < dump.sql` or in Workbench. |
-| `npm run db:reset` | **Deletes** these tables and their data, and creates them again empty. |
+| `npm run db:empty` | **Deletes** every table and all data, and creates them again empty. |
+| `npm run db:populate` | Adds sample data on top of what is there: the demo data above if the database is empty, then on every open line a few visits that ended **today** and a few patients checking in now. Run it again to add more. |
+| `npm run db:live` | Keeps the office moving: every few seconds someone checks in, is called, is seen or cancels, through the app's own queue code (history and notifications included). Ctrl+C stops. |
+| `npm run db:dump` | Writes every table to `server/src/database/dump.sql`. |
+| `npm run db:load` | **Replaces** every table with that dump (also loads with `mysql ... < dump.sql`). |
 
-Sign-in belongs to a teammate's module and is not on this branch. For curl or
-Postman, `npm run token` prints an admin bearer token:
-`curl -H "Authorization: Bearer <token>" http://localhost:4000/stats`.
+**Looking at the data in MySQL Workbench.**
+
+1. Click **+** next to _MySQL Connections_, and copy the host, port, user and
+   password from the Aiven service page. Set **Default Schema** to `defaultdb`.
+2. On the **SSL** tab, set **Use SSL** to _Require_ and **SSL CA File** to
+   `server/aiven-ca.pem`.
+3. Click **Test Connection**, then **OK**, and open the connection.
+4. Run `select * from queue_entries where status in ('waiting', 'called');` to
+   see who is in line. Finished visits stay in that table with their final
+   status. `docs/A4-database-design.txt` explains every table.
+
+Edits made in Workbench are live for everyone, so be careful with `DELETE` and
+`UPDATE`.
 
 ### Start the app and the backend
 
 Every screen reads and saves through the QueueSmart server in `server/`, and
-on this branch the server serves Service Management and the admin statistics
-from the MySQL database above. The API is described in
+the server keeps everything in the MySQL database: accounts, visit types,
+queues, check-ins, notifications and visit history. The API is described in
 `docs/A3-api-spec.txt`, and the A4 additions in
 `docs/A4-database-design.txt`.
 
@@ -162,8 +206,8 @@ npm run dev     # API on http://localhost:4000, restarts when you save
 
 Then run `npx expo start` in a second terminal from the project root.
 
-Sign-in, check-in and the front-desk queue screens call endpoints that are not
-on this branch; try the API with `npm run token` and curl instead.
+To try the front desk, open _Office staff sign in_ and use the admin account
+from the sample data. To try check-in, sign in as the demo patient.
 
 The app finds the server on its own: on web it uses the same host on port
 4000, and in Expo Go it uses the laptop address from the QR code. If that
@@ -172,10 +216,10 @@ does not work (for example with `--tunnel`), set the address yourself before
 
 Run the backend tests with `cd server && npm test`, or `npm run
 test:coverage` for the coverage report (`server/coverage/index.html`). These
-use in-memory data, so they never touch a database and need no `.env`. After
-changing SQL in `server/src/database/`, also run `npm run test:mysql`, which
-checks the real queries and every trigger against `DATABASE_URL` and deletes
-the rows it creates.
+use in-memory data, so they never touch the shared database and need no
+`.env`. After changing SQL in `server/src/database/`, also run `npm run
+test:mysql`, which checks the real queries against the shared database and
+deletes the rows it creates.
 
 A QR code appears in the terminal. On your phone, open the **Camera app**
 (iOS) or the **Expo Go** app (Android) and scan it, while your phone and
@@ -245,13 +289,13 @@ queuesmart-app/queuesmart-app/         the actual Expo project (package.json liv
       app.js                     the Express app; index.js starts it on port 4000
       api/                       "Back-end / API" box: routes, controllers, middleware,
                                  validation, business services (services, wait estimate,
-                                 stats, officeRules)
-      database/                  "Database [SQL]" box: MySQL connection, schema.sql,
-                                 triggers.sql, dump.sql, the db:* scripts, mock/ (sample
-                                 activity), and repositories/ (all the SQL queries)
+                                 stats, queue, officeRules). Teammates add auth, history,
+                                 and the notifications/ folder here.
+      database/                  "Database [SQL]" box: MySQL connection, schema.sql, migrate.js,
+                                 seed data, and repositories/ (all the SQL queries)
     tests/                       Vitest unit + supertest API tests
       fakes/                     in-memory repositories that `npm test` uses instead of MySQL
-      mysql/                     checks the real repositories and triggers (`npm run test:mysql`)
+      mysql/                     checks the real repositories (`npm run test:mysql`)
   docs/                         A3 proposal, API spec, testing plan, change log
 
 Calls only go downwards: **screens → frontend/state → src/api → (HTTP) → server**.

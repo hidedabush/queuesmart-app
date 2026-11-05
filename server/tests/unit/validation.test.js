@@ -159,3 +159,123 @@ describe('other rules', () => {
     expect(isIsoDate('10/19/2026')).toBe(false);
   });
 });
+
+describe('register', () => {
+  const goodSignUp = {
+    name: 'Taylor Morgan',
+    dob: '03/14/1995',
+    email: 'taylor@example.com',
+    password: 'Queue#2026',
+  };
+  const NAME = 'Enter your first and last name.';
+  const DOB = 'Enter a real date as MM/DD/YYYY.';
+  const PASSWORD = 'Password does not meet all requirements.';
+
+  it('accepts a good sign-up and cleans the values it stores', () => {
+    const { value, errors } = validateBody(schemas.register, {
+      ...goodSignUp,
+      name: '  Taylor   Morgan ',
+      email: 'Taylor@Example.COM',
+      phone: '(713) 555-0101',
+    });
+
+    expect(errors).toEqual({});
+    expect(value).toEqual({
+      name: 'Taylor Morgan',
+      dob: '1995-03-14',
+      email: 'taylor@example.com',
+      password: 'Queue#2026',
+      phone: '7135550101',
+    });
+  });
+
+  it('reports every missing required field', () => {
+    expect(Object.keys(fieldsOf(schemas.register, {})).sort()).toEqual(
+      ['dob', 'email', 'name', 'password'].sort()
+    );
+  });
+
+  it('needs a first and last name of 3-80 characters', () => {
+    expect(fieldsOf(schemas.register, { ...goodSignUp, name: 'Taylor' }).name).toBe(NAME);
+    expect(fieldsOf(schemas.register, { ...goodSignUp, name: 'A B' }).name).toBeUndefined();
+    expect(fieldsOf(schemas.register, { ...goodSignUp, name: `${chars(40)} ${chars(40)}` }).name).toBe(NAME);
+  });
+
+  it.each([
+    ['ISO format', '1995-03-14'],
+    ['a day that does not exist', '02/30/1995'],
+    ['a future date', '01/01/2999'],
+    ['an age over 120', '01/01/1800'],
+  ])('rejects a date of birth in %s', (_, dob) => {
+    expect(fieldsOf(schemas.register, { ...goodSignUp, dob }).dob).toBe(DOB);
+  });
+
+  it.each([
+    ['too short', 'Ab#1'],
+    ['too long', `Aa#1${chars(61)}`],
+    ['no capital letter', 'queue#2026'],
+    ['no lower-case letter', 'QUEUE#2026'],
+    ['no digit', 'Queue#queue'],
+    ['no symbol', 'Queue2026'],
+  ])('rejects a password with %s', (_, password) => {
+    expect(fieldsOf(schemas.register, { ...goodSignUp, password }).password).toBe(PASSWORD);
+  });
+
+  it('checks the email shape and length', () => {
+    expect(fieldsOf(schemas.register, { ...goodSignUp, email: 'taylor@example' }).email).toBe(
+      'Enter a valid email address.'
+    );
+    expect(fieldsOf(schemas.register, { ...goodSignUp, email: `${chars(250)}@x.com` }).email).toBe(
+      'Keep it to 254 characters or fewer.'
+    );
+  });
+
+  it('phone is optional, but must be 10 digits when sent', () => {
+    expect(validateBody(schemas.register, goodSignUp).value).not.toHaveProperty('phone');
+    expect(fieldsOf(schemas.register, { ...goodSignUp, phone: '555-0101' }).phone).toBe(
+      'Enter a 10-digit phone number.'
+    );
+  });
+});
+
+describe('login and change password', () => {
+  it('login only checks presence and the email shape, not password strength', () => {
+    expect(fieldsOf(schemas.login, { email: 'a@b.co', password: 'x' })).toEqual({});
+    expect(fieldsOf(schemas.login, { email: 'nope', password: '' })).toEqual({
+      email: 'Enter a valid email address.',
+      password: 'Password is required.',
+    });
+  });
+
+  it('a new password follows the sign-up rules', () => {
+    expect(fieldsOf(schemas.changePassword, { password: 'weak' }).password).toBe(
+      'Password does not meet all requirements.'
+    );
+    expect(fieldsOf(schemas.changePassword, { password: 'Stronger#2026' })).toEqual({});
+  });
+});
+
+describe('queue bodies', () => {
+  it('a visit reason is 3-120 characters', () => {
+    const reasonError = (reason) => fieldsOf(schemas.joinQueue, { reason }).reason;
+
+    expect(reasonError('')).toBe('Enter a reason for your visit.');
+    expect(reasonError('ab')).toBe('Use 3-120 characters for your visit reason.');
+    expect(reasonError(chars(121))).toBe('Use 3-120 characters for your visit reason.');
+    expect(reasonError('New cough')).toBeUndefined();
+  });
+
+  it('a called patient is resolved as seen or no-show only', () => {
+    expect(fieldsOf(schemas.resolveCalled, { outcome: 'seen' })).toEqual({});
+    expect(fieldsOf(schemas.resolveCalled, { outcome: 'done' }).outcome).toBe('Choose seen or no-show.');
+  });
+
+  it('an entry update is a move or a triage change, never both', () => {
+    expect(fieldsOf(schemas.entryUpdate, { direction: -1 })).toEqual({});
+    expect(fieldsOf(schemas.entryUpdate, { priority: 'urgent' })).toEqual({});
+    expect(fieldsOf(schemas.entryUpdate, { direction: '1' }).direction).toBe('Must be a whole number.');
+    expect(fieldsOf(schemas.entryUpdate, { direction: 1, priority: 'urgent' })).toEqual({
+      body: 'Send either direction or priority, not both.',
+    });
+  });
+});

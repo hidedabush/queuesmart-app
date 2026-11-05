@@ -5,7 +5,7 @@ import { splitSql } from '../../src/database/sqlFile.js';
 const sql = vi.hoisted(() => ({ query: vi.fn() }));
 vi.mock('../../src/database/mysql.js', () => ({ query: sql.query, queryOne: vi.fn() }));
 
-const { buildDump, insertStatements, readTables } = await import('../../src/database/dumpSql.js');
+const { buildDump, insertStatements, readTables, sqlValue } = await import('../../src/database/dumpSql.js');
 const { TABLES, TRIGGERS } = await import('../../src/database/setup.js');
 
 const tables = {
@@ -21,6 +21,14 @@ describe('database dump', () => {
     expect(statement).toBe("INSERT INTO `services` (`id`, `name`, `capacity`) VALUES\n  ('s1', 'Kid\\'s Visit', 5)");
     expect(insertStatements('queue_entries', tables.queue_entries)[0]).toContain("('q1', 'queue-s1', 1, NULL)");
     expect(insertStatements('visit_history', [])).toEqual([]);
+  });
+
+  it('writes JSON columns back as JSON text', () => {
+    // MySQL reads \" inside a quoted string back as ".
+    expect(sqlValue(['in-app', 'sms'])).toBe(String.raw`'[\"in-app\",\"sms\"]'`);
+    expect(sqlValue({ sms: true })).toBe(String.raw`'{\"sms\":true}'`);
+    expect(sqlValue(null)).toBe('NULL');
+    expect(sqlValue(5)).toBe('5');
   });
 
   it('splits big tables into several INSERTs', () => {
@@ -53,8 +61,8 @@ describe('database dump', () => {
     const read = await readTables();
 
     expect(Object.keys(read)).toEqual([...TABLES].reverse());
-    expect(read.services).toEqual([{ id: 'services' }]);
+    expect(read.user_credentials).toEqual([{ id: 'user_credentials' }]);
     expect(sql.query.mock.calls[0][0]).toContain("EXTRA NOT LIKE '%GENERATED%'");
-    expect(sql.query.mock.calls[1]).toEqual(['SELECT ?? FROM ?? ORDER BY 1', [['id'], 'services']]);
+    expect(sql.query.mock.calls[1]).toEqual(['SELECT ?? FROM ?? ORDER BY 1', [['id'], 'user_credentials']]);
   });
 });

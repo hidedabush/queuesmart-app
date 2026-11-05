@@ -1,10 +1,9 @@
 import { seedTables } from '../../src/database/seed.js';
 
 /**
- * In-memory copy of the MySQL tables (services, queueEntries, history), for
- * tests only. `npm test` swaps the real repositories for the ones in
- * ./repositories (see vitest.config.js), so every test starts from the same
- * rows and needs no database.
+ * In-memory copy of the MySQL tables, for tests only. `npm test` swaps the
+ * real repositories for the ones in ./repositories (see vitest.config.js),
+ * because every test resets its data and the real database is shared.
  *
  * Rows are copied on the way in and out so nothing outside this file can
  * change a table by mutating an object it was handed.
