@@ -3,13 +3,14 @@ import { statsForDate, today } from '../../src/api/services/statsService.js';
 import * as db from '../fakes/db.js';
 import { addToLine } from '../helpers.js';
 
-// A finished visit, written straight to the history table. Recording visits
-// belongs to the history module, which a teammate is building.
+// A finished visit, written straight to the history table (in MySQL a
+// trigger writes it when the entry leaves the line).
 function visit(serviceId, outcome, { joined = '14:00', called = null } = {}) {
   const at = (time) => Date.parse(`2026-10-19T${time}:00Z`);
+  const id = db.nextId('h');
   db.insert('history', {
-    id: db.nextId('h'),
-    userId: 'u-test',
+    id,
+    entryId: `q-${id}`,
     serviceId,
     serviceName: 'Test',
     date: '2026-10-19',

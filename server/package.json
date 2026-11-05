@@ -2,7 +2,7 @@
   "name": "queuesmart-server",
   "version": "1.0.0",
   "private": true,
-  "description": "QueueSmart backend: REST API, notification component and MySQL database.",
+  "description": "QueueSmart backend: Service Management and Admin Dashboard statistics API on MySQL.",
   "type": "module",
   "main": "src/index.js",
   "scripts": {
@@ -12,9 +12,15 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:mysql": "node --env-file-if-exists=.env node_modules/vitest/vitest.mjs run --config vitest.mysql.config.js",
+    "db:up": "docker compose up -d --wait",
+    "db:down": "docker compose down",
     "db:migrate": "node --env-file-if-exists=.env src/database/migrate.js",
-    "db:seed": "node --env-file-if-exists=.env src/database/migrate.js --seed",
-    "db:reset": "node --env-file-if-exists=.env src/database/migrate.js --reset --seed"
+    "db:reset": "node --env-file-if-exists=.env src/database/migrate.js --reset",
+    "db:populate": "node --env-file-if-exists=.env src/database/populate.js",
+    "db:live": "node --env-file-if-exists=.env src/database/live.js",
+    "db:dump": "node --env-file-if-exists=.env src/database/dump.js",
+    "db:load": "node --env-file-if-exists=.env src/database/migrate.js --load",
+    "token": "node --env-file-if-exists=.env scripts/token.js"
   },
   "engines": {
     "node": "^22.13.0 || ^24.3.0 || >=26.0.0"

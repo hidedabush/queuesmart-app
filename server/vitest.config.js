@@ -5,9 +5,10 @@ const fakes = fileURLToPath(new URL('./tests/fakes/repositories/', import.meta.u
 
 export default defineConfig({
   resolve: {
-    // Tests never touch the shared MySQL database. The services import their
-    // repositories as '../../database/repositories/xRepo.js', and only those
-    // imports get the in-memory stand-ins. A test that imports a real
+    // Tests never touch a MySQL database. The services (and the mock-data
+    // engine in src/database/mock/) import their repositories as
+    // '../../database/repositories/xRepo.js', and only those imports get the
+    // in-memory stand-ins. A test that imports a real
     // repository by its own path ('../../src/database/...') still gets it:
     // tests/unit/repositories.test.js with a mocked connection, and
     // tests/mysql/ against a real database (vitest.mysql.config.js).
@@ -25,9 +26,17 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       include: ['src/**/*.js'],
-      // index.js only starts the listener and migrate.js only reads the
-      // command line; seed.js is data, not logic.
-      exclude: ['src/index.js', 'src/database/migrate.js', 'src/database/seed.js'],
+      // index.js only starts the listener; migrate, populate, live and dump
+      // only read the command line and print (their logic is in setup.js,
+      // mock/activity.js and dumpSql.js); seed.js is data, not logic.
+      exclude: [
+        'src/index.js',
+        'src/database/migrate.js',
+        'src/database/populate.js',
+        'src/database/live.js',
+        'src/database/dump.js',
+        'src/database/seed.js',
+      ],
       reporter: ['text', 'html'],
       // Brief target is 70-80%. The run fails if coverage drops below this.
       thresholds: { lines: 75, functions: 75, branches: 75, statements: 75 },

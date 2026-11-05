@@ -1,157 +1,181 @@
 ===============================================================================
  QUEUESMART - ASSIGNMENT 4 DATABASE DESIGN
- MySQL 8 (relational), hosted on Aiven, used by the A3 backend
+ Service Management + Admin Dashboard statistics (Nguyen's portion)
+ MySQL 8 (relational)
 ===============================================================================
 
  Contents
-   1. Choice of database
+   1. Scope of this portion
    2. Tables and how they map to the A4 requirements
    3. Relationships (ER diagram)
    4. SQL to create the tables
-   5. Notifications in the database
+   5. Triggers: what the database does when a row changes
    6. Validation: backend and database
    7. How the backend uses the database
-   8. Tests and coverage
-   9. Running it
+   8. Sample data: empty database, populate, live, dump
+   9. Tests and coverage
+  10. Running it
 
 
 -------------------------------------------------------------------------------
- 1. CHOICE OF DATABASE
+ 1. SCOPE OF THIS PORTION
 -------------------------------------------------------------------------------
 
- MySQL, a relational database. The A1 container diagram already showed a
- "Database [SQL]" box, and the data is strongly related: entries belong to
- a queue, a queue to a service, and every entry, notification and visit to a
- user. Foreign keys, UNIQUE keys and transactions enforce those rules in the
- database itself.
+ This branch keeps only the parts of the database that belong to:
+   - the Service Management API: create, update, list, open/close and delete
+     visit types, with validation of required fields, field types and length
+     limits
+   - the Admin Dashboard statistics endpoint: today's served, no-show and
+     cancelled counts, and the average wait, per visit type
+   - the rule-based wait-time estimate (people waiting x expected visit
+     length, shown as a range up to 30% longer)
 
- One MySQL server is hosted on Aiven's free plan, so nobody on the team has
- to install MySQL or Docker. Everyone connects with the same DATABASE_URL.
+ Accounts, profiles, notifications, the patient and front-desk queue
+ endpoints and per-patient visit history belong to teammates and are not on
+ this branch. The queue table stays because service management reads the
+ line (waiting count, someone being called, wait estimate, the capacity and
+ delete rules) and the statistics read the visits that left it.
+
+ Endpoints (unchanged from docs/A3-api-spec.txt):
+   GET    /services             list, each with waiting, hasCalled, estimatedWait
+   GET    /services/:id         one visit type
+   POST   /services             create (admin)
+   PATCH  /services/:id         update (admin)
+   PATCH  /services/:id/open    open or close the line (admin)
+   DELETE /services/:id         delete once the line is empty (admin)
+   GET    /stats?date=          per visit type for one day, default today (admin)
 
 
 -------------------------------------------------------------------------------
  2. TABLES AND THE A4 REQUIREMENTS
 -------------------------------------------------------------------------------
 
- A4 requirement      Table              Fields (A4 name -> column)
- ------------------  -----------------  ----------------------------------------
- 1. UserCredentials  user_credentials   User ID -> id, Email -> email,
-                                        Encrypted password -> passwordHash
-                                        (scrypt, salted), Role -> role
-                                        ('user' | 'admin')
- 2. UserProfile      user_profiles      Full name -> fullName, Email -> email
-                                        (FK to user_credentials.email),
-                                        Contact -> phone, Preferences ->
-                                        preferences (JSON), plus dob
- 3. Service          services           Service ID -> id, name, description,
-                                        Expected duration -> expectedDuration,
-                                        Priority level -> priority, capacity
- 4. Queue            queues             Queue ID -> id, Service ID ->
-                                        serviceId, Status -> status
-                                        ('open' | 'closed'), Created date ->
-                                        createdAt
- 5. QueueEntry       queue_entries      Queue ID -> queueId, User ID ->
-                                        userId, Position -> position, Join
-                                        time -> joinedAt, Status -> status
-                                        ('waiting' | 'called' | 'served' |
-                                        'no-show' | 'canceled' | 'removed')
- 6. Notification     notifications      User ID -> userId, Message -> title +
-                                        message, Timestamp -> createdAt,
-                                        Status -> status ('sent' | 'viewed'),
-                                        plus type, entryId, serviceId and
-                                        channels from docs/A3-api-spec.txt
-                                        section 6
- 6. History          visit_history      One row per finished visit: userId,
-                                        service, date, times, outcome
+ A4 requirement   Table          Fields (A4 name -> column)
+ ---------------  -------------  ------------------------------------------
+ 3. Service       services       Service ID -> id, name, description,
+                                 Expected duration -> expectedDuration,
+                                 Priority level -> priority ('low' |
+                                 'medium' | 'high'), capacity
+ 4. Queue         queues         Queue ID -> id, Service ID -> serviceId,
+                                 Status -> status ('open' | 'closed'),
+                                 Created date -> createdAt
+ 5. QueueEntry    queue_entries  Queue ID -> queueId, Position -> position,
+                                 Join time -> joinedAt, Status -> status
+                                 ('waiting' | 'called' | 'served' |
+                                 'no-show' | 'canceled' | 'removed'), plus
+                                 priority, calledAt, leftAt
+ 6. History       visit_history  One row per finished visit: entryId,
+                                 serviceId, serviceName, date, joinedAt,
+                                 calledAt, leftAt, outcome ('seen' |
+                                 'no-show' | 'cancelled' | 'removed')
 
  Notes on the design
- - Passwords are never stored. passwordHash holds "salt:hash" from scrypt
-   (a one-way, salted hash). NULL means the account cannot sign in; these
-   are patients registered at the front desk.
- - Each service has exactly one queue (UNIQUE serviceId). The API still
-   shows a service's isOpen; it reads the queue's status.
- - Queue entries are not deleted when a patient leaves. The status records
-   how the visit ended and leftAt records when, so the queue keeps a full
-   record of the day.
- - position is the arrival order within a queue. Urgent patients are served
-   first, so the place shown to the patient is worked out from priority and
-   position.
+ - Each service has exactly one queue (UNIQUE serviceId), made by a trigger
+   when the service is inserted. The API's isOpen is the queue's status.
+ - Queue entries are not deleted when a visit ends. The status records how
+   it ended and leftAt records when.
+ - Wait for the statistics = calledAt - joinedAt of each 'seen' visit.
  - Times the app shows are BIGINT milliseconds since 1970, the numbers the
-   API already returned in A3. Calendar dates use DATE.
+   API already returned in A3. Calendar dates are DATE, in UTC.
 
 
 -------------------------------------------------------------------------------
  3. RELATIONSHIPS
 -------------------------------------------------------------------------------
 
-   user_credentials 1 ---- 1 user_profiles        (email, ON UPDATE CASCADE)
-          |
-          | 1
-          +---------------< queue_entries >--------------+
-          |                       | n                    |
-          +----< notifications    |                      |
-          |                       | 1                    |
-          +----< visit_history  queues 1 ---- 1 services
-                                (serviceId UNIQUE)
+   services 1 ---- 1 queues 1 ----< queue_entries
+      (serviceId UNIQUE)               |
+                                       | trigger T7 copies each finished
+                                       v visit (no foreign key)
+                                 visit_history
 
-   Deleting a service deletes its queue and that queue's entries (CASCADE).
-   Visit history keeps a copy of the service name and has no foreign key to
-   services, so a patient's history survives a deleted visit type.
+   Deleting a service deletes its queue and that queue's entries (CASCADE),
+   but only once nobody is in line (trigger T3). visit_history keeps a copy
+   of the service name and has no foreign key, so a day's numbers survive a
+   deleted visit type.
 
 
 -------------------------------------------------------------------------------
  4. SQL TO CREATE THE TABLES
 -------------------------------------------------------------------------------
 
- The exact statements are in server/src/database/schema.sql (run by
- `npm run db:migrate`). Primary keys (PK), foreign keys (FK) and other keys:
+ The exact statements are in server/src/database/schema.sql (tables) and
+ server/src/database/triggers.sql (triggers), both run by `npm run
+ db:migrate`.
 
- Table             PK      FK                                      Other keys
- ----------------  ------  --------------------------------------  ----------------------------
- user_credentials  id      -                                       UNIQUE email
- user_profiles     email   email -> user_credentials.email         -
- services          id      -                                       UNIQUE name
- queues            id      serviceId -> services.id                UNIQUE serviceId
- queue_entries     id      queueId -> queues.id,                   UNIQUE activeUserId,
-                           userId -> user_credentials.id           UNIQUE calledQueueId
- notifications     id      userId -> user_credentials.id,          INDEX (userId, createdAt),
-                           entryId -> queue_entries.id             INDEX (entryId, type)
- visit_history     id      userId -> user_credentials.id           INDEX (userId, leftAt),
-                                                                   INDEX (date)
+ Table          PK  FK                          Other keys
+ -------------  --  --------------------------  ------------------------------
+ services       id  -                           UNIQUE name
+ queues         id  serviceId -> services.id    UNIQUE serviceId
+ queue_entries  id  queueId -> queues.id        UNIQUE calledQueueId,
+                                                INDEX (queueId, status,
+                                                position)
+ visit_history  id  -                           UNIQUE entryId,
+                                                INDEX (date, serviceId)
 
- queue_entries has two generated columns that are filled only while the
- patient is still in line. Their UNIQUE keys let the database itself
- guarantee two rules even if two requests arrive at the same moment:
-   activeUserId   one active check-in per patient
-   calledQueueId  one called patient per queue
+ queue_entries.calledQueueId is a generated column, filled only while the
+ entry is being called. Its UNIQUE key lets the database itself guarantee one
+ called patient per queue even if two requests arrive at the same moment.
 
 
 -------------------------------------------------------------------------------
- 5. NOTIFICATIONS IN THE DATABASE
+ 5. TRIGGERS: WHAT THE DATABASE DOES WHEN A ROW CHANGES
 -------------------------------------------------------------------------------
 
- The endpoints, notification shape and message templates are the ones in
- docs/A3-api-spec.txt section 6 (the notification component in
- server/src/api/notifications/). A4 stores them in the notifications table:
+ The service layer checks the same rules first and answers with a clear
+ message. The triggers are the guarantee: they hold for every writer (the
+ API, the scripts, Workbench, a request that races past the service's own
+ check).
 
-   GET   /notifications/me           { notifications, unread }, newest first
-   PATCH /notifications/:id/read     { notification }, 404 if not the caller's
-   POST  /notifications/me/read-all  { unread: 0 }  ("Clear all")
+ A trigger that refuses a change raises SQLSTATE 45000 with the message
+ "<code>|<text>". The API answers it as 409 { error: <code>, message: <text> },
+ the same body the service layer sends for that rule
+ (server/src/database/signals.js, server/src/api/middleware/errors.js).
 
- The API's read flag is stored as A4's status column: read = false is
- 'sent', read = true is 'viewed'. channels is stored as JSON.
+ Trigger                     When                  What it does
+ --------------------------  --------------------  ----------------------------
+ T1 trg_services_after_      a service is added    creates its queue, open
+    insert
+ T2 trg_services_before_     a service changes     refuses an id change
+    update                                         (id-locked) and a capacity
+                                                   below the number waiting
+                                                   (capacity-below-waiting)
+ T3 trg_services_before_     a service is deleted  refuses while anyone is
+    delete                                         waiting or called
+                                                   (patients-in-line)
+ T4 trg_queues_before_       a queue changes       refuses moving it to another
+    update                                         service (queue-locked)
+ T5 trg_entries_before_      someone joins a line  refuses a closed line
+    insert                                         (closed), a full line
+                                                   (full), an entry that starts
+                                                   finished (not-in-line);
+                                                   fills the next position and
+                                                   the arrival time if left out
+ T6 trg_entries_before_      an entry changes      a finished visit is final
+    update                                         (visit-finished); only the
+                                                   called patient can be seen
+                                                   or a no-show (not-called);
+                                                   no leaving before joining
+                                                   (bad-time); no moving lines
+                                                   (entry-locked); stamps
+                                                   calledAt and leftAt if left
+                                                   out
+ T7 trg_entries_after_       an entry leaves the   writes its visit_history
+    update                   line                  row: served -> seen,
+                                                   canceled -> cancelled,
+                                                   no-show, removed
+ T8 trg_history_before_      history changes       refuses: history is a
+    update                                         record (history-locked)
 
- When notices are made (the spec's "Triggers"):
-   joined     the patient checks in
-   almost-up  the line changes (check-in, cancel, call, move, remove) and
-              the patient has 2 or fewer ahead; once per check-in
-   called     the front desk calls the patient
- When the patient leaves the line, every unread notice for that check-in is
- marked read. Notifications never include the reason for the visit, because
- they can show on a lock screen. The patient dashboard's bell lists the
- unread ones.
+ Allowed moves through a line (T6):
+   waiting -> called -> served | no-show
+   waiting | called -> canceled | removed
+   called -> waiting (sent back; calledAt is cleared)
 
- Every other endpoint is unchanged from docs/A3-api-spec.txt.
+ Note for hosted MySQL (e.g. Aiven): with binary logging on, a user without
+ SUPER can only create triggers when the server setting
+ log_bin_trust_function_creators is on. `npm run db:migrate` says so if
+ that is the problem.
 
 
 -------------------------------------------------------------------------------
@@ -161,27 +185,23 @@
  The backend checks every request first (server/src/api/validation/), and the
  database rejects anything that still gets through.
 
- Rule               Backend (400 with field messages)  Database
- -----------------  ---------------------------------  -------------------------
- Required fields    schemas.js "required"              NOT NULL
- Length limits      length / maxLength rules           VARCHAR(n), CHECK
-                                                        CHAR_LENGTH(...) >= 3
- Data types         checkType (string/integer/...)     INT, BIGINT, DATE, ENUM,
-                                                        JSON
- Allowed values     oneOf (priority, outcome, ...)     ENUM columns
- Ranges             intRange (duration 1-120,          CHECK BETWEEN
-                    capacity 1-50)
- Formats            email and phone patterns           CHECK (email LIKE, phone
-                                                        REGEXP '^[0-9]{10}$')
- Unique values      service checks (409)               UNIQUE email, service
-                                                        name, active check-in,
-                                                        called patient
- Relationships      service checks (404)               FOREIGN KEY
+ Rule              Backend (400 with field messages)   Database
+ ----------------  ----------------------------------  ------------------------
+ Required fields   schemas.js "required"               NOT NULL, CHECK
+                                                       CHAR_LENGTH(TRIM(...))
+ Length limits     name 3-100, description <= 300      VARCHAR(n), CHECK >= 3
+ Data types        checkType (string/integer/boolean)  INT, BIGINT, DATE, ENUM
+ Allowed values    oneOf (priority low/medium/high)    ENUM columns
+ Ranges            duration 1-120, capacity 1-50       CHECK BETWEEN
+ Unique values     service checks (409 name-taken)     UNIQUE name, one called
+                                                       patient per queue
+ Relationships     service checks (404)                FOREIGN KEY
+ Business rules    servicesService.js (409)            triggers T2-T8
 
  If the database rejects a value, the API still answers in its usual shape:
- a broken UNIQUE key becomes 409 "conflict", and a broken CHECK, length,
- type or NOT NULL rule becomes 400 "validation"
- (server/src/api/middleware/errors.js).
+ a trigger refusal becomes 409 with the rule's code, a broken UNIQUE key 409
+ "conflict", and a broken CHECK, length, type or NOT NULL rule 400
+ "validation".
 
 
 -------------------------------------------------------------------------------
@@ -189,56 +209,115 @@
 -------------------------------------------------------------------------------
 
    screens -> src/api -> (HTTP) -> routes -> controllers -> services
-     -> repositories (SQL) -> mysql.js (connection pool) -> MySQL
+     -> repositories (SQL) -> mysql.js (connection pool) -> MySQL (+ triggers)
 
  server/src/database/
-   mysql.js         connection pool from DATABASE_URL (TLS with aiven-ca.pem),
-                    query(), queryOne(), transaction()
+   mysql.js         connection pool from DATABASE_URL, query(), queryOne(),
+                    transaction()
    schema.sql       CREATE TABLE statements
-   setup.js         create/drop tables, load data (used by migrate.js)
-   migrate.js       npm run db:migrate | db:seed | db:reset
-   seed.js          demo data
-   repositories/    every SQL query in the app: userRepo, servicesRepo,
-                    queueRepo, historyRepo, notificationRepo
+   triggers.sql     the triggers in section 5
+   sqlFile.js       reads .sql files, including DELIMITER, like the mysql
+                    client does
+   setup.js         create/drop tables and triggers, row counts
+   signals.js       reads a trigger's "<code>|<text>" refusal
+   seed.js          the five sample visit types; in-memory rows for the tests
+   mock/activity.js the mock-data engine (section 8)
+   dumpSql.js       builds and reads a dump
+   migrate.js, populate.js, live.js, dump.js   the npm scripts
+   repositories/    every SQL query in the app: servicesRepo, queueRepo,
+                    historyRepo
 
- Writes that touch two tables run in one transaction: a new user (credentials
- + profile), a new service (service + its queue), and loading demo data.
-
- Queries use placeholders (?), so values are never pasted into the SQL text.
+ A service created closed is inserted and closed in one transaction, so
+ nobody can check in between. Queries use placeholders (?), so values are
+ never pasted into the SQL text.
 
 
 -------------------------------------------------------------------------------
- 8. TESTS AND COVERAGE
+ 8. SAMPLE DATA: EMPTY DATABASE, POPULATE, LIVE, DUMP
+-------------------------------------------------------------------------------
+
+ The database starts empty and fills up as you go.
+
+   npm run db:migrate   creates the tables and triggers; keeps data
+   npm run db:reset     DELETES these tables and their data, then creates
+                        them again, empty
+   npm run db:populate  adds sample data on top of what is there:
+                          - the five sample visit types, if missing
+                            (Prescription Refill closed)
+                          - per open line, 3-6 visits that already ended
+                            today (seen, no-show, cancelled, removed) and
+                            1-4 patients still waiting
+                        All times are relative to now, so "today" on the
+                        admin dashboard always has numbers. Run it again to
+                        add more. `-- --seed 42` repeats a run.
+   npm run db:live      keeps the database moving: every few seconds a
+                        patient checks in, is called, is seen or a no-show,
+                        or cancels, stamped with the current time. Prints
+                        each event and the day's statistics. Ctrl+C stops.
+                        `-- --every 3 --ticks 50 --seed 7`
+   npm run db:dump      writes the whole database to
+                        server/src/database/dump.sql (or `-- file.sql`)
+   npm run db:load      replaces the tables with that dump (or `-- file.sql`)
+
+ Every sample visit goes through the real line (join -> call -> finish), so
+ the triggers check each step and write the history the statistics read.
+ Steps the database refuses (a closed or full line) are printed as
+ "refused by the database", because refusing them is the point.
+
+ The dump lists DROP TABLE, CREATE TABLE, the rows, and then the triggers,
+ as mysqldump does, so loading it does not run the triggers a second time.
+ It also loads with `mysql -h HOST -P PORT -u USER -p DB < dump.sql` and
+ in Workbench. The committed dump.sql was made from an empty database with
+ `db:reset`, `db:populate -- --seed 42` and 20 `db:live` events, so its
+ dates are the day it was made; use db:populate for data dated today.
+
+
+-------------------------------------------------------------------------------
+ 9. TESTS AND COVERAGE
 -------------------------------------------------------------------------------
 
    npm test               every unit and API test; no database needed. The
                           services run on in-memory stand-ins
-                          (server/tests/fakes/), because every test resets
-                          its data and the real database is shared.
+                          (server/tests/fakes/). The stand-in line copies the
+                          triggers, so the mock-data engine is tested too.
    npm run test:coverage  the same, with the coverage report
                           (server/coverage/index.html). Fails below 75%.
-   npm run test:mysql     the real repositories against the real database,
-                          including the database's own rules (duplicate
-                          email, one active check-in, CHECK limits). It only
-                          touches rows it creates and deletes them.
+   npm run test:mysql     the real repositories and every trigger against
+                          DATABASE_URL. Only touches visit types it creates
+                          and deletes them.
 
- New tests for A4:
-   tests/unit/repositories.test.js     each SQL repository: tables, values,
-                                       column renames, booleans
-   tests/unit/mysqlConnection.test.js  pool options, transactions commit and
-                                       roll back
-   tests/unit/databaseSetup.test.js    schema, table order, demo data
-   tests/unit/notificationService.test.js
-   tests/integration/notifications.test.js
-   tests/mysql/repositories.test.js    against MySQL (npm run test:mysql)
+   tests/unit/servicesService.test.js   service management rules
+   tests/unit/historyStats.test.js      statistics
+   tests/unit/waitEstimate.test.js      wait-time estimate
+   tests/unit/validation.test.js        required fields, types, lengths
+   tests/unit/repositories.test.js      each SQL repository
+   tests/unit/databaseSetup.test.js     schema, triggers, .sql reading
+   tests/unit/dump.test.js              dump builder
+   tests/unit/mockActivity.test.js      populate and live
+   tests/unit/errorHandler.test.js      trigger refusal -> 409
+   tests/integration/api.test.js        the endpoints over HTTP
+   tests/mysql/repositories.test.js     triggers and repositories on MySQL
 
- Result when this was written: 239 tests passed, 99.3% line coverage
- (npm run test:coverage), and 23 of 23 MySQL tests passed.
+ Result when this was written: 130 tests passed with 99.7% line coverage
+ (npm run test:coverage), and 24 of 24 MySQL tests passed on MySQL 8.4.
 
 
 -------------------------------------------------------------------------------
- 9. RUNNING IT
+ 10. RUNNING IT
 -------------------------------------------------------------------------------
 
- See README.md section 3 for the database connection, demo accounts, and
- hosting the API.
+ This branch drops and rebuilds its own tables, so give it a database of its
+ own, not the team's shared one. With Docker Desktop:
+
+   cd server
+   copy .env.example .env        (DATABASE_URL points at the local MySQL)
+   npm ci
+   npm run db:up                 starts MySQL 8.4 (docker-compose.yml)
+   npm run db:migrate            empty tables + triggers
+   npm run db:populate           sample data for today
+   npm run dev                   API on http://localhost:4000
+   npm run db:live               (second terminal) live activity
+
+ Sign-in is not on this branch. `npm run token` prints an admin bearer token
+ for curl or Postman:
+   curl -H "Authorization: Bearer <token>" http://localhost:4000/stats

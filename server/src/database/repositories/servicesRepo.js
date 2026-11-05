@@ -1,7 +1,8 @@
 import { nextId, query, queryOne, transaction } from '../mysql.js';
 
-// services + queues. Every service has exactly one queue, and the API's
-// isOpen is that queue's status.
+// services + queues. Every service has exactly one queue, made by a trigger
+// when the service is inserted (triggers.sql, T1), and the API's isOpen is
+// that queue's status.
 
 const SELECT_SERVICE = `
   SELECT s.*, q.status = 'open' AS isOpen
@@ -30,20 +31,22 @@ export async function findByName(name, exceptId = null) {
   return toService(row);
 }
 
-// The service and its queue, together.
+// The trigger opens the new queue; a service created closed is closed in the
+// same transaction, so nobody can check in between the two.
 export async function insert({ isOpen = true, ...fields }) {
   const service = { ...fields, id: nextId('s') };
 
   await transaction(async (run) => {
     await run('INSERT INTO services SET ?', [service]);
-    await run('INSERT INTO queues SET ?', [
-      { id: nextId('queue'), serviceId: service.id, status: isOpen ? 'open' : 'closed' },
-    ]);
+    if (!isOpen) {
+      await run("UPDATE queues SET status = 'closed' WHERE serviceId = ?", [service.id]);
+    }
   });
 
   return { ...service, isOpen };
 }
 
+// A capacity below the waiting count is refused by a trigger (T2).
 export async function update(id, { isOpen, ...fields }) {
   if (Object.keys(fields).length > 0) {
     await query('UPDATE services SET ? WHERE id = ?', [fields, id]);
@@ -54,8 +57,8 @@ export async function update(id, { isOpen, ...fields }) {
   return findById(id);
 }
 
-// Also deletes its queue and that queue's entries (ON DELETE CASCADE).
-// Visit history keeps its rows.
+// Refused by a trigger while anyone is in line (T3). Otherwise its queue and
+// finished entries go too (ON DELETE CASCADE); visit history keeps its rows.
 export async function remove(id) {
   await query('DELETE FROM services WHERE id = ?', [id]);
 }

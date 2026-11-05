@@ -1,21 +1,12 @@
 import cors from 'cors';
 import express from 'express';
 import { errorHandler, notFoundHandler } from './api/middleware/errors.js';
-import { authRoutes } from './api/routes/authRoutes.js';
-import { historyRoutes } from './api/routes/historyRoutes.js';
-import { notificationRoutes } from './api/routes/notificationRoutes.js';
-import {
-  patientQueueRoutes,
-  patientServiceQueueRoutes,
-  servicesRoutes,
-  staffQueueRoutes,
-  staffServiceQueueRoutes,
-  statsRoutes,
-} from './api/routes/index.js';
+import { servicesRoutes, statsRoutes } from './api/routes/index.js';
 
 /**
- * The "Back-end / API [Application]" box. Built by a function so the tests
- * can load it with supertest without opening a port.
+ * The "Back-end / API [Application]" box: Service Management and the Admin
+ * Dashboard's statistics. Built by a function so the tests can load it with
+ * supertest without opening a port.
  */
 export function createApp() {
   const app = express();
@@ -25,17 +16,8 @@ export function createApp() {
   app.use(express.json({ limit: '20kb' }));
 
   app.get('/health', (req, res) => res.json({ ok: true }));
-  app.use('/auth', authRoutes);
   app.use('/services', servicesRoutes);
-  app.use('/services', patientServiceQueueRoutes);
-  app.use('/services', staffServiceQueueRoutes);
   app.use('/stats', statsRoutes);
-  // Staff routes come after the patient ones so /queue/me is never read as
-  // an entry id.
-  app.use('/queue', patientQueueRoutes);
-  app.use('/queue', staffQueueRoutes);
-  app.use('/history', historyRoutes);
-  app.use('/notifications', notificationRoutes);
 
   app.use(notFoundHandler);
   app.use(errorHandler);
