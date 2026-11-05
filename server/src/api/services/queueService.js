@@ -4,6 +4,7 @@ import { conflict, notFound } from '../errors.js';
 import { closeForEntry, notifyJoined, notifyLineChanged } from '../notifications/notificationService.js';
 import { recordOutcome } from './historyService.js';
 import { estimateWait } from './waitEstimate.js';
+import { HEAD_IN_AHEAD } from './lineRules.js';
 
 // Patient side of the queue. The front desk side (staffQueueService.js)
 // reuses getOrderedPatientLine so both see the same order.
@@ -30,7 +31,7 @@ function toMyEntry(entry, service, position, peopleAhead, estimatedWait) {
     serviceName: service.name,
     reason: entry.reason,
     priority: entry.priority,
-    status: entry.status,
+    status: entry.status === 'waiting' && peopleAhead <= HEAD_IN_AHEAD ? 'head-in' : entry.status, // a waiting patient with few people ahead is told to head to the office
     position,
     peopleAhead,
     estimatedWait,
