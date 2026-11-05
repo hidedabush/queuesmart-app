@@ -19,6 +19,14 @@ import { AvailabilityPill } from '../../frontend/components/Pill';
 import { useQueue, useServices } from '../../frontend/state/ServicesStore';
 import { colors, radius, spacing, type } from '../../frontend/theme';
 
+// "Just now", "12 min ago", or the time of day.
+function formatSentAt(createdAt, now = Date.now()) {
+  const minutes = Math.floor((now - createdAt) / 60_000);
+  if (minutes < 1) return 'Just now';
+  if (minutes < 60) return `${minutes} min ago`;
+  return new Date(createdAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+}
+
 function BellIcon() {
   return (
     <View style={styles.bellIcon}>
@@ -109,7 +117,8 @@ function NotificationItem({ item, onDismiss }) {
 export default function UserDashboard() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { services } = useServices();
+  const { services, notifications: sent, markNotificationRead, markAllNotificationsRead } =
+    useServices();
   const { activeQueue } = useQueue();
   const [notificationsVisible, setNotificationsVisible] = useState(false);
   const [dismissedNotifications, setDismissedNotifications] = useState([]);
@@ -154,22 +163,20 @@ export default function UserDashboard() {
   const openServices = services.filter((item) => item.isOpen);
   const queueStatus = activeQueue ? checkInStatus(activeQueue) : null;
 
-  // Never includes the reason for the visit: notifications can show on a
-  // lock screen.
+  // Unread notifications from the server (they never include the reason for
+  // the visit, because they can show on a lock screen), then office updates
+  // worked out here from the open visit types.
   const notifications = useMemo(() => {
-    const items = [];
-
-    if (activeQueue && service) {
-      const status = checkInStatus(activeQueue);
-      items.push({
-        // Keyed by status so a new stage shows again after an old one was dismissed.
-        id: `check-in-${activeQueue.id}-${activeQueue.status}`,
-        title: `${service.name}: ${status.label}`,
-        message: status.message,
-        time: 'Just now',
-        urgent: status.urgent,
-      });
-    }
+    const items = sent
+      .filter((item) => !item.read)
+      .map((item) => ({
+        id: item.id,
+        fromServer: true,
+        title: item.title,
+        message: item.message,
+        time: formatSentAt(item.createdAt),
+        urgent: item.type === 'called',
+      }));
 
     openServices.slice(0, activeQueue ? 1 : 2).forEach((item) => {
       items.push({
@@ -182,15 +189,24 @@ export default function UserDashboard() {
     });
 
     return items.filter((item) => !dismissedNotifications.includes(item.id));
-  }, [activeQueue, dismissedNotifications, openServices, service]);
+  }, [activeQueue, dismissedNotifications, openServices, sent]);
 
+  // Server notifications are saved as read; office updates are only hidden.
   const dismissNotification = (id) => {
+    if (notifications.some((item) => item.id === id && item.fromServer)) {
+      markNotificationRead(id);
+      return;
+    }
     setDismissedNotifications((current) => [...current, id]);
   };
 
   const dismissAllNotifications = () => {
+    if (notifications.some((item) => item.fromServer)) markAllNotificationsRead();
     setDismissedNotifications((current) => [
-      ...new Set([...current, ...notifications.map((item) => item.id)]),
+      ...new Set([
+        ...current,
+        ...notifications.filter((item) => !item.fromServer).map((item) => item.id),
+      ]),
     ]);
   };
 

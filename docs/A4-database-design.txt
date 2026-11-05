@@ -1,0 +1,244 @@
+===============================================================================
+ QUEUESMART - ASSIGNMENT 4 DATABASE DESIGN
+ MySQL 8 (relational), hosted on Aiven, used by the A3 backend
+===============================================================================
+
+ Contents
+   1. Choice of database
+   2. Tables and how they map to the A4 requirements
+   3. Relationships (ER diagram)
+   4. SQL to create the tables
+   5. Notifications in the database
+   6. Validation: backend and database
+   7. How the backend uses the database
+   8. Tests and coverage
+   9. Running it
+
+
+-------------------------------------------------------------------------------
+ 1. CHOICE OF DATABASE
+-------------------------------------------------------------------------------
+
+ MySQL, a relational database. The A1 container diagram already showed a
+ "Database [SQL]" box, and the data is strongly related: entries belong to
+ a queue, a queue to a service, and every entry, notification and visit to a
+ user. Foreign keys, UNIQUE keys and transactions enforce those rules in the
+ database itself.
+
+ One MySQL server is hosted on Aiven's free plan, so nobody on the team has
+ to install MySQL or Docker. Everyone connects with the same DATABASE_URL.
+
+
+-------------------------------------------------------------------------------
+ 2. TABLES AND THE A4 REQUIREMENTS
+-------------------------------------------------------------------------------
+
+ A4 requirement      Table              Fields (A4 name -> column)
+ ------------------  -----------------  ----------------------------------------
+ 1. UserCredentials  user_credentials   User ID -> id, Email -> email,
+                                        Encrypted password -> passwordHash
+                                        (scrypt, salted), Role -> role
+                                        ('user' | 'admin')
+ 2. UserProfile      user_profiles      Full name -> fullName, Email -> email
+                                        (FK to user_credentials.email),
+                                        Contact -> phone, Preferences ->
+                                        preferences (JSON), plus dob
+ 3. Service          services           Service ID -> id, name, description,
+                                        Expected duration -> expectedDuration,
+                                        Priority level -> priority, capacity
+ 4. Queue            queues             Queue ID -> id, Service ID ->
+                                        serviceId, Status -> status
+                                        ('open' | 'closed'), Created date ->
+                                        createdAt
+ 5. QueueEntry       queue_entries      Queue ID -> queueId, User ID ->
+                                        userId, Position -> position, Join
+                                        time -> joinedAt, Status -> status
+                                        ('waiting' | 'called' | 'served' |
+                                        'no-show' | 'canceled' | 'removed')
+ 6. Notification     notifications      User ID -> userId, Message -> title +
+                                        message, Timestamp -> createdAt,
+                                        Status -> status ('sent' | 'viewed'),
+                                        plus type, entryId, serviceId and
+                                        channels from docs/A3-api-spec.txt
+                                        section 6
+ 6. History          visit_history      One row per finished visit: userId,
+                                        service, date, times, outcome
+
+ Notes on the design
+ - Passwords are never stored. passwordHash holds "salt:hash" from scrypt
+   (a one-way, salted hash). NULL means the account cannot sign in; these
+   are patients registered at the front desk.
+ - Each service has exactly one queue (UNIQUE serviceId). The API still
+   shows a service's isOpen; it reads the queue's status.
+ - Queue entries are not deleted when a patient leaves. The status records
+   how the visit ended and leftAt records when, so the queue keeps a full
+   record of the day.
+ - position is the arrival order within a queue. Urgent patients are served
+   first, so the place shown to the patient is worked out from priority and
+   position.
+ - Times the app shows are BIGINT milliseconds since 1970, the numbers the
+   API already returned in A3. Calendar dates use DATE.
+
+
+-------------------------------------------------------------------------------
+ 3. RELATIONSHIPS
+-------------------------------------------------------------------------------
+
+   user_credentials 1 ---- 1 user_profiles        (email, ON UPDATE CASCADE)
+          |
+          | 1
+          +---------------< queue_entries >--------------+
+          |                       | n                    |
+          +----< notifications    |                      |
+          |                       | 1                    |
+          +----< visit_history  queues 1 ---- 1 services
+                                (serviceId UNIQUE)
+
+   Deleting a service deletes its queue and that queue's entries (CASCADE).
+   Visit history keeps a copy of the service name and has no foreign key to
+   services, so a patient's history survives a deleted visit type.
+
+
+-------------------------------------------------------------------------------
+ 4. SQL TO CREATE THE TABLES
+-------------------------------------------------------------------------------
+
+ The exact statements are in server/src/database/schema.sql (run by
+ `npm run db:migrate`). Primary keys (PK), foreign keys (FK) and other keys:
+
+ Table             PK      FK                                      Other keys
+ ----------------  ------  --------------------------------------  ----------------------------
+ user_credentials  id      -                                       UNIQUE email
+ user_profiles     email   email -> user_credentials.email         -
+ services          id      -                                       UNIQUE name
+ queues            id      serviceId -> services.id                UNIQUE serviceId
+ queue_entries     id      queueId -> queues.id,                   UNIQUE activeUserId,
+                           userId -> user_credentials.id           UNIQUE calledQueueId
+ notifications     id      userId -> user_credentials.id,          INDEX (userId, createdAt),
+                           entryId -> queue_entries.id             INDEX (entryId, type)
+ visit_history     id      userId -> user_credentials.id           INDEX (userId, leftAt),
+                                                                   INDEX (date)
+
+ queue_entries has two generated columns that are filled only while the
+ patient is still in line. Their UNIQUE keys let the database itself
+ guarantee two rules even if two requests arrive at the same moment:
+   activeUserId   one active check-in per patient
+   calledQueueId  one called patient per queue
+
+
+-------------------------------------------------------------------------------
+ 5. NOTIFICATIONS IN THE DATABASE
+-------------------------------------------------------------------------------
+
+ The endpoints, notification shape and message templates are the ones in
+ docs/A3-api-spec.txt section 6 (the notification component in
+ server/src/api/notifications/). A4 stores them in the notifications table:
+
+   GET   /notifications/me           { notifications, unread }, newest first
+   PATCH /notifications/:id/read     { notification }, 404 if not the caller's
+   POST  /notifications/me/read-all  { unread: 0 }  ("Clear all")
+
+ The API's read flag is stored as A4's status column: read = false is
+ 'sent', read = true is 'viewed'. channels is stored as JSON.
+
+ When notices are made (the spec's "Triggers"):
+   joined     the patient checks in
+   almost-up  the line changes (check-in, cancel, call, move, remove) and
+              the patient has 2 or fewer ahead; once per check-in
+   called     the front desk calls the patient
+ When the patient leaves the line, every unread notice for that check-in is
+ marked read. Notifications never include the reason for the visit, because
+ they can show on a lock screen. The patient dashboard's bell lists the
+ unread ones.
+
+ Every other endpoint is unchanged from docs/A3-api-spec.txt.
+
+
+-------------------------------------------------------------------------------
+ 6. VALIDATION: BACKEND AND DATABASE
+-------------------------------------------------------------------------------
+
+ The backend checks every request first (server/src/api/validation/), and the
+ database rejects anything that still gets through.
+
+ Rule               Backend (400 with field messages)  Database
+ -----------------  ---------------------------------  -------------------------
+ Required fields    schemas.js "required"              NOT NULL
+ Length limits      length / maxLength rules           VARCHAR(n), CHECK
+                                                        CHAR_LENGTH(...) >= 3
+ Data types         checkType (string/integer/...)     INT, BIGINT, DATE, ENUM,
+                                                        JSON
+ Allowed values     oneOf (priority, outcome, ...)     ENUM columns
+ Ranges             intRange (duration 1-120,          CHECK BETWEEN
+                    capacity 1-50)
+ Formats            email and phone patterns           CHECK (email LIKE, phone
+                                                        REGEXP '^[0-9]{10}$')
+ Unique values      service checks (409)               UNIQUE email, service
+                                                        name, active check-in,
+                                                        called patient
+ Relationships      service checks (404)               FOREIGN KEY
+
+ If the database rejects a value, the API still answers in its usual shape:
+ a broken UNIQUE key becomes 409 "conflict", and a broken CHECK, length,
+ type or NOT NULL rule becomes 400 "validation"
+ (server/src/api/middleware/errors.js).
+
+
+-------------------------------------------------------------------------------
+ 7. HOW THE BACKEND USES THE DATABASE
+-------------------------------------------------------------------------------
+
+   screens -> src/api -> (HTTP) -> routes -> controllers -> services
+     -> repositories (SQL) -> mysql.js (connection pool) -> MySQL
+
+ server/src/database/
+   mysql.js         connection pool from DATABASE_URL (TLS with aiven-ca.pem),
+                    query(), queryOne(), transaction()
+   schema.sql       CREATE TABLE statements
+   setup.js         create/drop tables, load data (used by migrate.js)
+   migrate.js       npm run db:migrate | db:seed | db:reset
+   seed.js          demo data
+   repositories/    every SQL query in the app: userRepo, servicesRepo,
+                    queueRepo, historyRepo, notificationRepo
+
+ Writes that touch two tables run in one transaction: a new user (credentials
+ + profile), a new service (service + its queue), and loading demo data.
+
+ Queries use placeholders (?), so values are never pasted into the SQL text.
+
+
+-------------------------------------------------------------------------------
+ 8. TESTS AND COVERAGE
+-------------------------------------------------------------------------------
+
+   npm test               every unit and API test; no database needed. The
+                          services run on in-memory stand-ins
+                          (server/tests/fakes/), because every test resets
+                          its data and the real database is shared.
+   npm run test:coverage  the same, with the coverage report
+                          (server/coverage/index.html). Fails below 75%.
+   npm run test:mysql     the real repositories against the real database,
+                          including the database's own rules (duplicate
+                          email, one active check-in, CHECK limits). It only
+                          touches rows it creates and deletes them.
+
+ New tests for A4:
+   tests/unit/repositories.test.js     each SQL repository: tables, values,
+                                       column renames, booleans
+   tests/unit/mysqlConnection.test.js  pool options, transactions commit and
+                                       roll back
+   tests/unit/databaseSetup.test.js    schema, table order, demo data
+   tests/unit/notificationService.test.js
+   tests/integration/notifications.test.js
+   tests/mysql/repositories.test.js    against MySQL (npm run test:mysql)
+
+ Result when this was written: 239 tests passed, 99.3% line coverage
+ (npm run test:coverage), and 23 of 23 MySQL tests passed.
+
+
+-------------------------------------------------------------------------------
+ 9. RUNNING IT
+-------------------------------------------------------------------------------
+
+ See README.md section 3 for the database connection, demo accounts, and
+ hosting the API.

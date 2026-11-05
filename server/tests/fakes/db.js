@@ -1,12 +1,9 @@
-import { seedTables } from './seed.js';
+import { seedTables } from '../../src/database/seed.js';
 
 /**
- * In-memory stand-in for the "Database [SQL]" box in the A1 container
- * diagram. It holds the same four tables (users, services, queueEntries,
- * history) and lives only as long as the server process.
- *
- * Only the repositories in ./repositories call this file. In A4 those
- * repositories are rewritten as SQL queries and this file goes away.
+ * In-memory copy of the MySQL tables, for tests only. `npm test` swaps the
+ * real repositories for the ones in ./repositories (see vitest.config.js),
+ * because every test resets its data and the real database is shared.
  *
  * Rows are copied on the way in and out so nothing outside this file can
  * change a table by mutating an object it was handed.

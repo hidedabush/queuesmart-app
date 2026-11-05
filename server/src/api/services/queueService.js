@@ -1,6 +1,7 @@
 import * as queueRepo from '../../database/repositories/queueRepo.js';
 import * as servicesRepo from '../../database/repositories/servicesRepo.js';
 import { conflict, notFound } from '../errors.js';
+import { closeForEntry, notifyJoined, notifyLineChanged } from '../notifications/notificationService.js';
 import { recordOutcome } from './historyService.js';
 import { estimateWait } from './waitEstimate.js';
 
@@ -12,8 +13,8 @@ function findActiveEntry(userId) {
   return queueRepo.findActiveByUser(userId);
 }
 
-function getServiceOrThrow(serviceId) {
-  const service = servicesRepo.findById(serviceId);
+async function getServiceOrThrow(serviceId) {
+  const service = await servicesRepo.findById(serviceId);
 
   if (!service) {
     throw notFound('This visit type does not exist.');
@@ -48,24 +49,46 @@ export function byLineOrder(a, b) {
 }
 
 // Everyone still waiting (not called) for one visit type, in serving order.
-export function getOrderedPatientLine(serviceId) {
-  return queueRepo
-    .listByService(serviceId)
-    .filter((entry) =>
-      ['waiting', 'head-in'].includes(entry.status)
-    )
-    .sort(byLineOrder);
+export async function getOrderedPatientLine(serviceId) {
+  const entries = await queueRepo.listWaiting(serviceId);
+
+  return entries.sort(byLineOrder);
 }
 
-export function joinQueue(userId, serviceId, reason) {
-  if (findActiveEntry(userId)) {
+// Status a queue entry ends with, for each history outcome.
+const LEFT_STATUS = {
+  seen: 'served',
+  'no-show': 'no-show',
+  cancelled: 'canceled',
+  removed: 'removed',
+};
+
+// Every way out of a line: cancelQueue (patient), resolveCalled and
+// removeEntry (front desk). The history row copies the entry's details, the
+// entry is kept with its final status, and its unread notices are closed.
+export async function leaveLine(entry, outcome) {
+  await recordOutcome(entry, outcome);
+  await queueRepo.finish(entry.id, LEFT_STATUS[outcome]);
+  await closeForEntry(entry.id);
+}
+
+// queue.changed (docs/A3-api-spec.txt section 5): tell anyone now near the
+// front of this line to head to the office.
+export async function announceLineChange(serviceId) {
+  const service = await servicesRepo.findById(serviceId);
+  if (!service) return;
+  await notifyLineChanged(service, await getOrderedPatientLine(serviceId));
+}
+
+export async function joinQueue(userId, serviceId, reason) {
+  if (await findActiveEntry(userId)) {
     throw conflict(
       'already-checked-in',
       'You already have an active check-in.'
     );
   }
 
-  const service = getServiceOrThrow(serviceId);
+  const service = await getServiceOrThrow(serviceId);
 
   if (!service.isOpen) {
     throw conflict(
@@ -74,7 +97,7 @@ export function joinQueue(userId, serviceId, reason) {
     );
   }
 
-  const existingEntries = queueRepo.listByService(serviceId);
+  const existingEntries = await queueRepo.listByService(serviceId);
 
   if (existingEntries.length >= service.capacity) {
     throw conflict(
@@ -83,14 +106,14 @@ export function joinQueue(userId, serviceId, reason) {
     );
   }
 
-  const lineBeforeJoin = getOrderedPatientLine(serviceId);
+  const lineBeforeJoin = await getOrderedPatientLine(serviceId);
   const nextOrder =
     existingEntries.reduce(
       (highest, entry) => Math.max(highest, entry.order ?? 0),
       0
     ) + 1;
 
-  const entry = queueRepo.insert({
+  const entry = await queueRepo.insert({
     userId,
     serviceId,
     reason: reason.trim(),
@@ -109,6 +132,9 @@ export function joinQueue(userId, serviceId, reason) {
   const peopleAhead = position - 1;
   const estimatedWait = estimateWait(service, peopleAhead);
 
+  await notifyJoined(entry, service, position, estimatedWait);
+  await announceLineChange(serviceId);
+
   return {
     entry: toMyEntry(
       entry,
@@ -121,14 +147,14 @@ export function joinQueue(userId, serviceId, reason) {
 }
 
 
-export function getMyQueue(userId) {
-  const entry = findActiveEntry(userId);
+export async function getMyQueue(userId) {
+  const entry = await findActiveEntry(userId);
 
   if (!entry) {
     return null;
   }
 
-  const service = getServiceOrThrow(entry.serviceId);
+  const service = await getServiceOrThrow(entry.serviceId);
 
   if (entry.status === 'called') {
     return {
@@ -136,7 +162,7 @@ export function getMyQueue(userId) {
     };
   }
 
-  const orderedLine = getOrderedPatientLine(entry.serviceId);
+  const orderedLine = await getOrderedPatientLine(entry.serviceId);
   const index = orderedLine.findIndex(
     (item) => item.id === entry.id
   );
@@ -164,15 +190,13 @@ export function getMyQueue(userId) {
 }
 
 
-export function cancelQueue(userId) {
-  const entry = findActiveEntry(userId);
+export async function cancelQueue(userId) {
+  const entry = await findActiveEntry(userId);
 
   if (!entry) {
     throw notFound('You do not have an active check-in to cancel.');
   }
 
-  // Row is written before the entry is removed so the row can copy its details.
-  recordOutcome(entry, 'cancelled');
-
-  queueRepo.remove(entry.id);
+  await leaveLine(entry, 'cancelled');
+  await announceLineChange(entry.serviceId);
 }

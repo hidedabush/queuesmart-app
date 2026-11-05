@@ -79,7 +79,7 @@ function createToken(user) {
 }
 
 export async function register(input) {
-  const existingUser = userRepo.findByEmail(input.email);
+  const existingUser = await userRepo.findByEmail(input.email);
 
   if (existingUser) {
     throw emailTaken();
@@ -89,7 +89,7 @@ export async function register(input) {
 
   // Always register ordinary users. Admin accounts must be provisioned
   // separately; a client must never choose its own role.
-  const user = userRepo.insert({
+  const user = await userRepo.insert({
     name: input.name,
     dob: input.dob,
     email: input.email,
@@ -104,7 +104,7 @@ export async function register(input) {
 }
 
 export async function login(input) {
-  const user = userRepo.findByEmail(input.email);
+  const user = await userRepo.findByEmail(input.email);
 
   // Use the same error for an unknown email and an incorrect password.
   if (
@@ -121,8 +121,8 @@ export async function login(input) {
   };
 }
 
-export function getCurrentUser(userId) {
-  const user = userRepo.findById(userId);
+export async function getCurrentUser(userId) {
+  const user = await userRepo.findById(userId);
 
   if (!user) {
     throw unauthenticated();
@@ -134,7 +134,7 @@ export function getCurrentUser(userId) {
 }
 
 export async function changePassword(userId, password) {
-  const user = userRepo.findById(userId);
+  const user = await userRepo.findById(userId);
 
   if (!user) {
     throw unauthenticated();
@@ -142,5 +142,5 @@ export async function changePassword(userId, password) {
 
   const passwordHash = await hashPassword(password);
 
-  userRepo.update(userId, { passwordHash });
+  await userRepo.setPasswordHash(userId, passwordHash);
 }

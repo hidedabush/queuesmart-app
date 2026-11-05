@@ -15,6 +15,23 @@ describe('errorHandler', () => {
     expect(res.json).toHaveBeenCalledWith({ error: 'full', message: 'This line is full for today.' });
   });
 
+  it('turns a MySQL duplicate key into a 409', () => {
+    const res = fakeResponse();
+    errorHandler(Object.assign(new Error('Duplicate entry'), { code: 'ER_DUP_ENTRY' }), {}, res, () => {});
+    expect(res.status).toHaveBeenCalledWith(409);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ error: 'conflict' }));
+  });
+
+  it('turns a MySQL rule violation into a 400', () => {
+    const res = fakeResponse();
+    const error = Object.assign(new Error('Check constraint'), { code: 'ER_CHECK_CONSTRAINT_VIOLATED' });
+    errorHandler(error, {}, res, () => {});
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({ error: 'validation', fields: { body: 'The database rejected one of the values.' } })
+    );
+  });
+
   it('hides unexpected errors behind a generic 500', () => {
     const res = fakeResponse();
     errorHandler(new Error('database exploded'), {}, res, () => {});

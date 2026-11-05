@@ -3,7 +3,7 @@ import express from 'express';
 import { beforeEach, describe, expect, it } from 'vitest';
 import request from 'supertest';
 
-import * as db from '../../src/database/db.js';
+import * as db from '../fakes/db.js';
 import { errorHandler, notFoundHandler } from '../../src/api/middleware/errors.js';
 import { patientQueueRoutes } from '../../src/api/routes/patientQueueRoutes.js';
 import { patientServiceQueueRoutes } from '../../src/api/routes/patientServiceQueueRoutes.js';

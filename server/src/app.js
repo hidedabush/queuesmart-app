@@ -35,7 +35,7 @@ export function createApp() {
   app.use('/queue', patientQueueRoutes);
   app.use('/queue', staffQueueRoutes);
   app.use('/history', historyRoutes);
-    app.use('/notifications', notificationRoutes);
+  app.use('/notifications', notificationRoutes);
 
   app.use(notFoundHandler);
   app.use(errorHandler);

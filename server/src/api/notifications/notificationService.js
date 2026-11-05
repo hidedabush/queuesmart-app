@@ -34,12 +34,12 @@ function toPublicNotification(row) {
 }
 
 // A patient with no account (an unknown userId) is skipped quietly.
-function create(entry, type, service, text) {
-  const user = userRepo.findById(entry.userId);
+async function create(entry, type, service, text) {
+  const user = await userRepo.findById(entry.userId);
   if (!user) return null;
 
   const channels = user.phone ? ['in-app', 'sms'] : ['in-app'];
-  const row = notificationRepo.insert({
+  const row = await notificationRepo.insert({
     userId: user.id,
     type,
     title: text.title,
@@ -63,12 +63,12 @@ export function notifyJoined(entry, service, position, estimatedWait) {
 
 // `orderedLine` is the service's waiting line in serving order. Anyone with
 // HEAD_IN_AHEAD or fewer patients ahead is told once to head to the office.
-export function notifyLineChanged(service, orderedLine) {
-  orderedLine.forEach((entry, peopleAhead) => {
-    if (peopleAhead > HEAD_IN_AHEAD) return;
-    if (notificationRepo.hasForEntry(entry.userId, entry.id, 'almost-up')) return;
-    create(entry, 'almost-up', service, almostUpMessage(service.name));
-  });
+export async function notifyLineChanged(service, orderedLine) {
+  for (const [peopleAhead, entry] of orderedLine.entries()) {
+    if (peopleAhead > HEAD_IN_AHEAD) break;
+    if (await notificationRepo.hasForEntry(entry.userId, entry.id, 'almost-up')) continue;
+    await create(entry, 'almost-up', service, almostUpMessage(service.name));
+  }
 }
 
 export function notifyCalled(entry, service) {
@@ -78,11 +78,11 @@ export function notifyCalled(entry, service) {
 // The patient left the line (cancelled, seen, no-show or removed), so any
 // notice still unread for that check-in is out of date.
 export function closeForEntry(entryId) {
-  notificationRepo.markEntryRead(entryId);
+  return notificationRepo.markEntryRead(entryId);
 }
 
-export function listMine(userId) {
-  const rows = notificationRepo.listByUser(userId);
+export async function listMine(userId) {
+  const rows = await notificationRepo.listByUser(userId);
   return {
     notifications: rows.map(toPublicNotification),
     unread: rows.filter((row) => !row.read).length,
@@ -90,13 +90,13 @@ export function listMine(userId) {
 }
 
 // Someone else's notification looks the same as one that does not exist.
-export function markRead(userId, id) {
-  const row = notificationRepo.findById(id);
+export async function markRead(userId, id) {
+  const row = await notificationRepo.findById(id);
   if (!row || row.userId !== userId) throw notFound('Notification not found.');
-  return { notification: toPublicNotification(notificationRepo.update(id, { read: true })) };
+  return { notification: toPublicNotification(await notificationRepo.update(id, { read: true })) };
 }
 
-export function markAllRead(userId) {
-  notificationRepo.markAllRead(userId);
+export async function markAllRead(userId) {
+  await notificationRepo.markAllRead(userId);
   return { unread: 0 };
 }
