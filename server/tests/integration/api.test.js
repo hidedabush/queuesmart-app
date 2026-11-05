@@ -122,6 +122,14 @@ describe('statistics API', () => {
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ date: '2026-10-19' });
     expect(res.body.services).toHaveLength(5);
+    expect(res.body.totals).toEqual({
+      currentlyWaiting: expect.any(Number),
+      served: expect.any(Number),
+      noShows: expect.any(Number),
+      cancelled: expect.any(Number),
+      removed: expect.any(Number),
+      averageWaitMinutes: expect.toBeOneOf([null, expect.any(Number)]),
+    });
     expect((await admin.get('/stats')).status).toBe(200);
     expect((await admin.get('/stats?date=19-10-2026')).status).toBe(400);
   });

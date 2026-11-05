@@ -28,9 +28,11 @@ export default defineConfig({
       include: ['src/**/*.js'],
       // index.js only starts the listener; migrate, populate, live and dump
       // only read the command line and print (their logic is in setup.js,
-      // mock/activity.js and dumpSql.js); seed.js is data, not logic.
+      // mock/activity.js and dumpSql.js); start.js only runs Docker and
+      // migrate for npm run db:start; seed.js is data, not logic.
       exclude: [
         'src/index.js',
+        'src/database/start.js',
         'src/database/migrate.js',
         'src/database/populate.js',
         'src/database/live.js',

@@ -151,12 +151,9 @@ export default function RegisterScreen() {
         <Stack.Screen options={{ title: 'Register', headerShown: false }} />
 
         <View style={styles.header}>
-          <Text style={[type.label, styles.eyebrow]}>New patient</Text>
+          <Text style={[type.label, styles.eyebrow]}>Create account</Text>
           <Text style={styles.title}>Register</Text>
-          <Text style={type.secondary}>
-            The front desk confirms your name and date of birth when you arrive, so
-            enter them exactly as they appear on your photo ID.
-          </Text>
+          <Text style={type.secondary}>Your email will be used as your username for queue access.</Text>
         </View>
 
         <View style={styles.card}>
@@ -210,13 +207,13 @@ export default function RegisterScreen() {
             }}
             onSubmitEditing={handleEmailSubmit}
             error={errors.email}
-            placeholder="name@example.com"
+            placeholder="name@school.edu"
             keyboardType="email-address"
             autoCapitalize="none"
             autoCorrect={false}
             textContentType="emailAddress"
             maxLength={254}
-            helper="Check-in updates and visit reminders go here."
+            helper="Use your school or office email address."
             returnKeyType="next"
             inputRef={emailRef}
             required
@@ -237,7 +234,7 @@ export default function RegisterScreen() {
             secureTextEntry
             textContentType="newPassword"
             maxLength={64}
-            helper="Use a strong password to protect your patient account."
+            helper="Use a strong password to protect your queue account."
             returnKeyType="next"
             inputRef={passwordRef}
             required

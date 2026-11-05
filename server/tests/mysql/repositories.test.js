@@ -6,7 +6,7 @@ import * as queueRepo from "../../src/database/repositories/queueRepo.js";
 import * as servicesRepo from "../../src/database/repositories/servicesRepo.js";
 import * as userRepo from "../../src/database/repositories/userRepo.js";
 
-// Runs against the team's shared database, so it only touches rows it created
+// Runs against your real database, so it only touches rows it created
 // and deletes them at the end. Needs `npm run db:migrate` first.
 const tag = nextId("test");
 const email = `${tag}@queuesmart.test`;

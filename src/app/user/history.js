@@ -6,8 +6,8 @@ import { useServices } from '../../frontend/state/ServicesStore';
 import { colors, radius, spacing, type } from '../../frontend/theme';
 
 const outcomeLabels = {
-  seen: 'Seen',
-  cancelled: 'Cancelled',
+  seen: 'Served',
+  cancelled: 'Left queue',
   'no-show': 'No-show',
   removed: 'Removed by staff',
 };
@@ -21,20 +21,20 @@ function formatDate(isoDate) {
   });
 }
 
-export default function VisitHistory() {
+export default function QueueHistory() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { history } = useServices();
 
   return (
     <View style={styles.screen}>
-      <Stack.Screen options={{ title: 'Visit History', headerShown: false }} />
+      <Stack.Screen options={{ title: 'Queue History', headerShown: false }} />
       <ScrollView
         contentContainerStyle={[styles.content, { paddingTop: insets.top + spacing.md }]}
         showsVerticalScrollIndicator={false}
       >
-        <Text style={type.title}>Visit history</Text>
-        <Text style={styles.subtitle}>Your past walk-in check-ins at this office.</Text>
+        <Text style={type.title}>Queue history</Text>
+        <Text style={styles.subtitle}>Past services you have joined.</Text>
 
         {history.length ? (
           <View style={styles.list}>
@@ -55,8 +55,8 @@ export default function VisitHistory() {
           </View>
         ) : (
           <View style={styles.emptyState}>
-            <Text style={styles.emptyTitle}>No past visits yet</Text>
-            <Text style={styles.subtitle}>Visits you check in for will appear here.</Text>
+            <Text style={styles.emptyTitle}>No past queues yet</Text>
+            <Text style={styles.subtitle}>Queues you leave will appear here.</Text>
           </View>
         )}
 

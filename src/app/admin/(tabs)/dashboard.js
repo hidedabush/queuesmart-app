@@ -47,7 +47,8 @@ export default function AdminDashboard() {
       openCount: open.length,
       total: services.length,
       busiest: longest && longest.waiting > 0 ? longest : null,
-      today: totalsForToday(stats),
+      // Today's totals across every visit type, worked out by GET /stats.
+      today: stats?.totals ?? null,
     };
   }, [services, stats]);
 
@@ -142,20 +143,6 @@ function LiveDot({ active }) {
   );
 }
 
-// Today's totals across every visit type, from GET /stats.
-function totalsForToday(stats) {
-  if (!stats) return null;
-  let served = 0;
-  let noShows = 0;
-  let waitMinutes = 0;
-  stats.services.forEach((s) => {
-    served += s.served;
-    noShows += s.noShows;
-    waitMinutes += (s.averageWaitMinutes ?? 0) * s.served;
-  });
-  return { served, noShows, averageWait: served ? Math.round(waitMinutes / served) : null };
-}
-
 function Summary({ summary, heroSize, onOpenBusiest }) {
   const { waiting, openCount, total, open, busiest, today } = summary;
   const live = openCount > 0;
@@ -204,8 +191,8 @@ function Summary({ summary, heroSize, onOpenBusiest }) {
 
       {today ? (
         <Text style={[type.label, { marginTop: spacing.md }]}>
-          Today · {today.served} seen · {today.noShows} no-shows
-          {today.averageWait !== null ? ` · avg wait ${today.averageWait} min` : ''}
+          Today · {today.served} seen · {today.noShows} no-shows · {today.cancelled} cancelled
+          {today.averageWaitMinutes !== null ? ` · avg wait ${today.averageWaitMinutes} min` : ''}
         </Text>
       ) : null}
 

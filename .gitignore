@@ -34,9 +34,6 @@ yarn-error.*
 .env*.local
 server/.env
 
-# Aiven's public certificate, needed to connect to the database
-!server/aiven-ca.pem
-
 # typescript
 *.tsbuildinfo
 

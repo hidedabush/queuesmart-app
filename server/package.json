@@ -20,6 +20,7 @@
     "db:live": "node --env-file-if-exists=.env src/database/live.js",
     "db:dump": "node --env-file-if-exists=.env src/database/dump.js",
     "db:load": "node --env-file-if-exists=.env src/database/migrate.js --load",
+    "db:start": "node src/database/start.js",
     "db:up": "docker compose up -d --wait",
     "db:down": "docker compose down"
   },

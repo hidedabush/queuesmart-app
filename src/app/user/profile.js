@@ -15,16 +15,10 @@ const passwordRules = [
   { label: '1 special character', test: (value) => /[^A-Za-z0-9]/.test(value) },
 ];
 
-function formatDob(dob) {
-  if (!dob) return null;
-  const [year, month, day] = dob.split('-');
-  return `${month}/${day}/${year}`;
-}
-
 export default function UserProfile() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { patient, userEmail, changePassword, logout } = useServices();
+  const { userEmail, changePassword, logout } = useServices();
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [message, setMessage] = useState('');
@@ -83,16 +77,8 @@ export default function UserProfile() {
         <Text style={type.title}>Profile</Text>
 
         <View style={styles.section}>
-          <Text style={styles.sectionLabel}>PATIENT</Text>
-          <Text style={styles.email}>{patient.name || 'No name on file'}</Text>
-          <Text style={[styles.sectionLabel, styles.detailLabel]}>DATE OF BIRTH</Text>
-          <Text style={styles.email}>{formatDob(patient.dob) || 'No date of birth on file'}</Text>
-          <Text style={[styles.sectionLabel, styles.detailLabel]}>ACCOUNT EMAIL</Text>
+          <Text style={styles.sectionLabel}>ACCOUNT EMAIL</Text>
           <Text style={styles.email}>{userEmail || 'No email on file'}</Text>
-          <Text style={[type.secondary, styles.detailLabel]}>
-            To correct your name or date of birth, ask the front desk at your next visit. They
-            need to see your photo ID.
-          </Text>
         </View>
 
         <View style={styles.section}>
@@ -185,7 +171,6 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
   },
   sectionLabel: { ...type.label, fontSize: 10 },
-  detailLabel: { marginTop: spacing.lg },
   email: { ...type.body, marginTop: spacing.sm },
   sectionTitle: { ...type.heading, marginBottom: spacing.lg },
   requirements: {
