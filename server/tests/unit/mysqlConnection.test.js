@@ -1,4 +1,3 @@
-import { existsSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // src/database/mysql.js with mysql2 replaced by a fake pool.
@@ -20,7 +19,7 @@ const fake = vi.hoisted(() => {
 
 vi.mock('mysql2/promise', () => ({ default: { createPool: fake.createPool } }));
 
-const URL_WITH_OPTIONS = 'mysql://u:p@db.example.com:12345/defaultdb?ssl-mode=REQUIRED';
+const DATABASE_URL = 'mysql://u:p@localhost:3306/queuesmart';
 
 async function load() {
   vi.resetModules();
@@ -29,7 +28,7 @@ async function load() {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  process.env.DATABASE_URL = URL_WITH_OPTIONS;
+  process.env.DATABASE_URL = DATABASE_URL;
 });
 
 afterEach(() => {
@@ -42,18 +41,14 @@ describe('mysql connection', () => {
     await expect(load()).rejects.toThrow('DATABASE_URL is not set');
   });
 
-  it('drops URL options mysql2 does not understand and keeps dates as text', async () => {
+  it('connects with DATABASE_URL and keeps dates as text', async () => {
     await load();
 
-    const options = fake.createPool.mock.calls[0][0];
-    expect(options).toMatchObject({
-      uri: 'mysql://u:p@db.example.com:12345/defaultdb',
+    expect(fake.createPool.mock.calls[0][0]).toEqual({
+      uri: DATABASE_URL,
       connectionLimit: 5,
       dateStrings: true,
     });
-    // Encrypted with Aiven's certificate once server/aiven-ca.pem is there.
-    const caFile = new URL('../../aiven-ca.pem', import.meta.url);
-    expect(Boolean(options.ssl?.ca)).toBe(existsSync(caFile));
   });
 
   it('returns rows, or the first row', async () => {

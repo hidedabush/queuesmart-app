@@ -1,6 +1,6 @@
 ===============================================================================
  QUEUESMART - ASSIGNMENT 4 DATABASE DESIGN
- MySQL 8 (relational), hosted on Aiven, used by the A3 backend
+ MySQL 8 (relational), run locally, used by the A3 backend
 ===============================================================================
 
  Contents
@@ -27,8 +27,9 @@
  user. Foreign keys, UNIQUE keys and transactions enforce those rules in the
  database itself.
 
- One MySQL server is hosted on Aiven's free plan, so nobody on the team has
- to install MySQL or Docker. Everyone connects with the same DATABASE_URL.
+ Each teammate runs MySQL 8.4 on their own laptop, free: in Docker
+ (server/docker-compose.yml, started by `npm run db:start`) or installed by
+ hand (SETUP.md). The server finds it through DATABASE_URL in server/.env.
 
 
 -------------------------------------------------------------------------------
@@ -197,7 +198,7 @@
      -> repositories (SQL) -> mysql.js (connection pool) -> MySQL
 
  server/src/database/
-   mysql.js         connection pool from DATABASE_URL (TLS with aiven-ca.pem),
+   mysql.js         connection pool from DATABASE_URL,
                     query(), queryOne(), transaction()
    schema.sql       CREATE TABLE statements
    triggers.sql     the triggers in section 10
@@ -228,7 +229,7 @@
    npm test               every unit and API test; no database needed. The
                           services run on in-memory stand-ins
                           (server/tests/fakes/), because every test resets
-                          its data and the real database is shared.
+                          its data and must not touch the real database.
    npm run test:coverage  the same, with the coverage report
                           (server/coverage/index.html). Fails below 75%.
    npm run test:mysql     the real repositories against the real database,
@@ -316,7 +317,7 @@
  T7 trg_history_before_update   history changes       refuses: history is a
                                                       record (history-locked)
 
- Hosted MySQL (e.g. Aiven): with binary logging on, a user without SUPER can
+ MySQL with binary logging on (the default): a user without SUPER can
  only create triggers when the server setting log_bin_trust_function_creators
  is on. `npm run db:migrate` says so if that is the problem.
 
@@ -349,9 +350,8 @@
    npm run db:dump      writes every table to server/src/database/dump.sql
                         (or `-- file.sql`); no mysqldump needed
    npm run db:load      REPLACES every table with that dump (or `-- file.sql`)
-   npm run db:up        optional: a private MySQL 8.4 on your laptop
-                        (server/docker-compose.yml), to try these without
-                        touching the shared database
+   npm run db:start     starts MySQL 8.4 in Docker (server/docker-compose.yml),
+                        creates the tables and adds the demo data if empty
 
  A step that is refused (a closed or full line) is printed, not thrown,
  because refusing it is the point.

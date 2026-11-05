@@ -18,7 +18,7 @@ import { splitSql } from './sqlFile.js';
 const args = process.argv.slice(2);
 const DEFAULT_DUMP = new URL('./dump.sql', import.meta.url);
 
-// Aiven (and any MySQL with binary logging) refuses CREATE TRIGGER from a
+// MySQL with binary logging on (the default) refuses CREATE TRIGGER from a
 // user without SUPER unless log_bin_trust_function_creators is on.
 const TRIGGER_PRIVILEGE = 'ER_BINLOG_CREATE_ROUTINE_NEED_SUPER';
 

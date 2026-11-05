@@ -1,7 +1,6 @@
-# Optional: a private MySQL on your own laptop, for trying db:empty,
-# db:populate, db:live and db:load without touching the team's shared
-# database. `npm run db:up` starts it, `npm run db:down` stops
-# it (the data stays in the volume; `docker compose down -v` deletes it).
+# The MySQL database on your own machine. npm run db:start starts it (and
+# creates the tables and demo data); npm run db:down stops it. The data stays
+# in the volume; `docker compose down -v` deletes it.
 #
 # server/.env:
 #   DATABASE_URL=mysql://root:queuesmart@localhost:3306/queuesmart

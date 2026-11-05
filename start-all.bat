@@ -1,6 +1,8 @@
 @echo off
-REM Starts the QueueSmart backend (port 4000) and the Expo dev server,
-REM each in its own window. Close those windows to stop them.
+REM Starts the QueueSmart database, the backend (port 4000) and the Expo dev
+REM server. The backend and Expo each get their own window; close those
+REM windows to stop them. The database keeps running in Docker until you run
+REM "npm run db:down" in server\.
 
 set ROOT=%~dp0
 
@@ -10,6 +12,18 @@ if not exist "%ROOT%server\node_modules" (
   call npm ci
   popd
 )
+
+echo Starting the database ...
+pushd "%ROOT%server"
+call npm run db:start
+if errorlevel 1 (
+  popd
+  echo.
+  echo The database did not start. Fix the problem above, then run this again.
+  pause
+  exit /b 1
+)
+popd
 
 echo Starting backend on http://localhost:4000 ...
 start "QueueSmart API" cmd /k "cd /d "%ROOT%server" && npm run dev"

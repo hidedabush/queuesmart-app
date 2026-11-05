@@ -35,8 +35,8 @@ rules are in section 9.
    winget install --id Oracle.MySQLWorkbench --source winget
    ```
    On a Mac, or without `winget`, download it from
-   https://dev.mysql.com/downloads/workbench/. You do not need to install MySQL
-   itself: the team shares one hosted database (section 3).
+   https://dev.mysql.com/downloads/workbench/. MySQL itself runs in Docker, or
+   you install it yourself ([SETUP.md](SETUP.md)).
 
 ### VS Code extensions
 
@@ -101,37 +101,27 @@ it means you're one folder too shallow (or too deep) — `cd` until `dir` /
 `ls` shows a `package.json` in the current folder, then run `npx expo start`
 from there.
 
-### Connect to the database (once per machine)
+### Set up the database (once per machine)
 
-The server stores its data in one MySQL database hosted on
-[Aiven](https://aiven.io), shared by the whole team. It will not start until
-it can reach that database.
+The server keeps its data in a MySQL database on your own laptop. It will not
+start until it can reach it. **[SETUP.md](SETUP.md) has the full steps**, both
+automatic and manual. The short version, with Docker Desktop open:
 
-1. Ask a teammate for the connection string (it looks like
-   `mysql://USER:PASSWORD@HOST:PORT/defaultdb`). Share it privately, never in
-   git or a public chat.
-2. Copy `server/.env.example` to `server/.env` and paste it in as
-   `DATABASE_URL`. Git ignores `.env`.
-3. Run `git pull` if you do not have `server/aiven-ca.pem`. Aiven only accepts
-   encrypted connections, and the server needs this certificate to make one.
+```bash
+cd server
+npm run db:start    # creates server/.env, starts MySQL in Docker, adds the demo data
+```
 
-Everyone sees and changes the same data, so use fictional details only. When
-a teammate adds a table to `server/src/database/schema.sql`, run `npm run
-db:migrate` from `server/`. It creates any missing tables and leaves existing
-ones alone. A change to an existing table needs `npm run db:reset` (below), or
-an `ALTER TABLE` in Workbench to keep the data.
+No Docker? Install MySQL yourself: [SETUP.md](SETUP.md), section 4B.
 
-**Creating the database (one person, once).**
+Each teammate has their own database, so your changes stay on your laptop.
+When a teammate adds a table to `server/src/database/schema.sql`, run `npm run
+db:migrate` (or `npm run db:start`) from `server/`. It creates any missing
+tables and leaves existing ones alone. A change to an existing table needs
+`npm run db:reset` (below), or an `ALTER TABLE` in Workbench to keep the data.
 
-1. Sign up at https://console.aiven.io and create a **MySQL** service on the
-   **Free** plan.
-2. On the service page, download the **CA certificate** to `server/aiven-ca.pem`
-   and commit it. It is public, so it is safe in git.
-3. Copy the **Service URI** into `server/.env` as `DATABASE_URL`.
-4. From `server/`, run `npm run db:seed`. This creates the tables and adds the
-   sample data below. It refuses to run once the database has data.
-
-**Sample data.** `npm run db:seed` fills an empty database with:
+**Sample data.** `npm run db:start` (or `npm run db:seed`) fills an empty
+database with:
 
 - 5 visit types and their queues (Prescription Refill closed)
 - 15 patients waiting in line
@@ -147,14 +137,12 @@ an `ALTER TABLE` in Workbench to keep the data.
 
 The other sample patients can't sign in: they were registered at the front
 desk. To start over, run `npm run db:reset`. It **deletes every table and all
-data for the whole team**, then rebuilds the tables and adds the sample data
-again. Tell the team before you run it.
+your data**, then rebuilds the tables and adds the sample data again.
 
 **Growing sample data, triggers and dumps.** The database also enforces its
 rules itself with triggers (`server/src/database/triggers.sql`, explained in
 `docs/A4-database-design.txt` section 10), so `npm run db:migrate` after
-pulling. These scripts change the data, so try them on a private database
-first (`npm run db:up` starts one in Docker; see `server/.env.example`):
+pulling. These scripts change the data in your own database:
 
 | Command | What it does |
 | --- | --- |
@@ -166,17 +154,14 @@ first (`npm run db:up` starts one in Docker; see `server/.env.example`):
 
 **Looking at the data in MySQL Workbench.**
 
-1. Click **+** next to _MySQL Connections_, and copy the host, port, user and
-   password from the Aiven service page. Set **Default Schema** to `defaultdb`.
-2. On the **SSL** tab, set **Use SSL** to _Require_ and **SSL CA File** to
-   `server/aiven-ca.pem`.
-3. Click **Test Connection**, then **OK**, and open the connection.
-4. Run `select * from queue_entries where status in ('waiting', 'called');` to
+1. Click **+** next to _MySQL Connections_. Set **Hostname** to `127.0.0.1`,
+   **Port** to `3306`, **Username** to `root` and **Default Schema** to
+   `queuesmart`. The password is `queuesmart` for the Docker database, or your
+   own root password if you installed MySQL yourself.
+2. Click **Test Connection**, then **OK**, and open the connection.
+3. Run `select * from queue_entries where status in ('waiting', 'called');` to
    see who is in line. Finished visits stay in that table with their final
    status. `docs/A4-database-design.txt` explains every table.
-
-Edits made in Workbench are live for everyone, so be careful with `DELETE` and
-`UPDATE`.
 
 ### Start the app and the backend
 
@@ -191,10 +176,11 @@ the project root:
 
 .\start-all.bat
 
-It opens two windows: **QueueSmart API** (the server on
-http://localhost:4000) and **QueueSmart Expo** (the app). It installs the
-server packages the first time it runs. Close those two windows to stop
-everything.
+It starts the database (`npm run db:start`), then opens two windows:
+**QueueSmart API** (the server on http://localhost:4000) and **QueueSmart
+Expo** (the app). It installs the server packages the first time it runs.
+Close those two windows to stop the app and the server. The Docker database
+keeps running until you run `npm run db:down` in `server/`.
 
 If you prefer two terminals, start the server yourself and leave it running:
 
@@ -216,10 +202,10 @@ does not work (for example with `--tunnel`), set the address yourself before
 
 Run the backend tests with `cd server && npm test`, or `npm run
 test:coverage` for the coverage report (`server/coverage/index.html`). These
-use in-memory data, so they never touch the shared database and need no
-`.env`. After changing SQL in `server/src/database/`, also run `npm run
-test:mysql`, which checks the real queries against the shared database and
-deletes the rows it creates.
+use in-memory data, so they never touch the database and need no `.env`.
+After changing SQL in `server/src/database/`, also run `npm run test:mysql`,
+which checks the real queries against your database and deletes the rows it
+creates.
 
 A QR code appears in the terminal. On your phone, open the **Camera app**
 (iOS) or the **Expo Go** app (Android) and scan it, while your phone and
@@ -229,25 +215,6 @@ iPhone with Expo Go instead.
 
 > On campus Wi-Fi, devices are often isolated from each other and the QR code
 > will not connect. Run `npx expo start --tunnel` instead.
-
-### Hosting the API online (optional)
-
-You only need this if the app should work without someone's laptop running
-the server, for example for a demo. The database is already online on Aiven.
-[Render](https://render.com)'s free plan can run the API straight from GitHub:
-
-1. On Render, create a **Web Service** from this GitHub repository.
-2. Set **Root Directory** to `server`, **Build Command** to `npm ci`, and
-   **Start Command** to `npm start`.
-3. Under **Environment**, add `DATABASE_URL` (the Aiven Service URI),
-   `JWT_SECRET` (any long random text) and `NODE_ENV` = `production`.
-4. Deploy, then open `https://<your-service>.onrender.com/health`. It should
-   show `{"ok":true}`.
-5. Point the app at it:
-   `EXPO_PUBLIC_API_URL=https://<your-service>.onrender.com npx expo start`.
-
-A free Render service sleeps after 15 minutes without traffic and takes about
-a minute to wake, so open the `/health` link a minute before a demo.
 
 ---
 
