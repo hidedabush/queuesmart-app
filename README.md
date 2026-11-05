@@ -150,6 +150,20 @@ desk. To start over, run `npm run db:reset`. It **deletes every table and all
 data for the whole team**, then rebuilds the tables and adds the sample data
 again. Tell the team before you run it.
 
+**Growing sample data, triggers and dumps.** The database also enforces its
+rules itself with triggers (`server/src/database/triggers.sql`, explained in
+`docs/A4-database-design.txt` section 10), so `npm run db:migrate` after
+pulling. These scripts change the data, so try them on a private database
+first (`npm run db:up` starts one in Docker; see `server/.env.example`):
+
+| Command | What it does |
+| --- | --- |
+| `npm run db:empty` | **Deletes** every table and all data, and creates them again empty. |
+| `npm run db:populate` | Adds sample data on top of what is there: the demo data above if the database is empty, then on every open line a few visits that ended **today** and a few patients checking in now. Run it again to add more. |
+| `npm run db:live` | Keeps the office moving: every few seconds someone checks in, is called, is seen or cancels, through the app's own queue code (history and notifications included). Ctrl+C stops. |
+| `npm run db:dump` | Writes every table to `server/src/database/dump.sql`. |
+| `npm run db:load` | **Replaces** every table with that dump (also loads with `mysql ... < dump.sql`). |
+
 **Looking at the data in MySQL Workbench.**
 
 1. Click **+** next to _MySQL Connections_, and copy the host, port, user and

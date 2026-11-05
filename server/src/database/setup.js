@@ -1,8 +1,10 @@
-import { readFileSync } from 'node:fs';
 import { query, queryOne, transaction } from './mysql.js';
+import { sampleTables, seedTables } from './seed.js';
+import { readSqlFile } from './sqlFile.js';
 
-// Creating the tables and loading the demo data. migrate.js runs these from
-// the npm scripts; nothing in the API calls them.
+// Creating the tables and triggers and loading the demo data. migrate.js,
+// populate.js and dump.js run these from the npm scripts; nothing in the API
+// calls them.
 
 // Children before parents, so dropping never breaks a foreign key.
 export const TABLES = [
@@ -15,22 +17,36 @@ export const TABLES = [
   'user_credentials',
 ];
 
+// triggers.sql, in file order.
+export const TRIGGERS = [
+  'trg_services_after_insert',
+  'trg_services_before_update',
+  'trg_services_before_delete',
+  'trg_queues_before_update',
+  'trg_entries_before_insert',
+  'trg_entries_before_update',
+  'trg_history_before_update',
+];
+
+// The queue each service gets (made by trigger T1).
 export const queueIdFor = (serviceId) => `queue-${serviceId}`;
 
-export function schemaStatements() {
-  const schema = readFileSync(new URL('./schema.sql', import.meta.url), 'utf8');
-  return schema
-    .split(/;\s*$/m)
-    .map((statement) => statement.replace(/^\s*--.*$/gm, '').trim())
-    .filter(Boolean);
-}
+export const schemaStatements = () => readSqlFile('schema.sql');
+export const triggerStatements = () => readSqlFile('triggers.sql');
 
-export async function createTables() {
-  for (const statement of schemaStatements()) {
+export async function runAll(statements) {
+  for (const statement of statements) {
     await query(statement);
   }
 }
 
+// Tables first, then the triggers that read them.
+export async function createTables() {
+  await runAll(schemaStatements());
+  await runAll(triggerStatements());
+}
+
+// Dropping a table also drops its triggers.
 export async function dropTables() {
   for (const table of TABLES) {
     await query(`DROP TABLE IF EXISTS ${table}`);
@@ -40,6 +56,29 @@ export async function dropTables() {
 export async function isEmpty() {
   const { count } = await queryOne('SELECT COUNT(*) AS count FROM user_credentials');
   return count === 0;
+}
+
+// Row counts per table, parents first, for the scripts' summaries.
+export async function counts() {
+  const result = {};
+  for (const table of [...TABLES].reverse()) {
+    result[table] = (await queryOne(`SELECT COUNT(*) AS count FROM ${table}`)).count;
+  }
+  return result;
+}
+
+// The demo data npm run db:seed adds: the starting rows (accounts, visit
+// types, people waiting) and a morning of visits that already ended today.
+export function demoData(now = Date.now()) {
+  const base = seedTables();
+  const sample = sampleTables(now);
+  return {
+    ...base,
+    users: [...base.users, ...sample.users],
+    queueEntries: [...base.queueEntries, ...sample.queueEntries],
+    history: [...base.history, ...sample.history],
+    notifications: [...base.notifications, ...sample.notifications],
+  };
 }
 
 // The app's row shapes (as in seed.js and the API) split into table rows.
@@ -80,7 +119,9 @@ export function toTableRows({ users = [], services = [], queueEntries = [], hist
   };
 }
 
-// All or nothing: a failed row leaves the database as it was.
+// All or nothing: a failed row leaves the database as it was. Trigger T1
+// has already made each new service's queue, so the queue rows only set
+// its status (open or closed).
 export function insertAll(data) {
   const tables = toTableRows(data);
 
@@ -91,7 +132,8 @@ export function insertAll(data) {
 
       const columns = Object.keys(rows[0]);
       const values = rows.map((row) => columns.map((column) => row[column]));
-      await run(`INSERT INTO ${table} (??) VALUES ?`, [columns, values]);
+      const upsert = table === 'queues' ? ' ON DUPLICATE KEY UPDATE status = VALUES(status)' : '';
+      await run(`INSERT INTO ${table} (??) VALUES ?${upsert}`, [columns, values]);
     }
     return Object.fromEntries(Object.entries(tables).map(([table, rows]) => [table, rows.length]));
   });

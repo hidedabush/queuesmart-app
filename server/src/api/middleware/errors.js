@@ -1,3 +1,4 @@
+import { signalOf } from '../../database/signals.js';
 import { AppError, notFound } from '../errors.js';
 
 // Any path no route matched.
@@ -36,6 +37,13 @@ export function errorHandler(err, req, res, next) {
       message: 'Some fields need attention.',
       fields: { body: 'Request body must be valid JSON.' },
     });
+  }
+
+  // A trigger refused the change (src/database/triggers.sql). Same answer as
+  // the service layer gives for that rule, e.g. 409 capacity-below-waiting.
+  const signal = signalOf(err);
+  if (signal) {
+    return res.status(409).json({ error: signal.code, message: signal.message });
   }
 
   if (err.code === DUPLICATE) {

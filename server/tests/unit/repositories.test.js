@@ -113,22 +113,24 @@ describe('servicesRepo', () => {
     expect(call(sql.queryOne, 1).params).toEqual(['Sick Visit', 's1', 's1']);
   });
 
-  it('creates the service and its queue together', async () => {
+  it('inserts only the service; trigger T1 makes its open queue', async () => {
     const draft = { name: 'Allergy Shots', description: 'Shots.', expectedDuration: 10, priority: 'low', capacity: 5 };
 
-    const created = await servicesRepo.insert({ ...draft, isOpen: false });
+    const created = await servicesRepo.insert(draft);
 
-    expect(created).toEqual({ ...draft, id: 's-new', isOpen: false });
-    expect(call(sql.run, 0).params).toEqual([{ ...draft, id: 's-new' }]);
-    expect(call(sql.run, 1)).toEqual({
-      text: 'INSERT INTO queues SET ?',
-      params: [{ id: 'queue-new', serviceId: 's-new', status: 'closed' }],
-    });
+    expect(created).toEqual({ ...draft, id: 's-new', isOpen: true });
+    expect(sql.run).toHaveBeenCalledTimes(1);
+    expect(call(sql.run)).toEqual({ text: 'INSERT INTO services SET ?', params: [{ ...draft, id: 's-new' }] });
   });
 
-  it('opens a new service by default', async () => {
-    await servicesRepo.insert({ name: 'Allergy Shots' });
-    expect(call(sql.run, 1).params[0].status).toBe('open');
+  it('closes a service created closed in the same transaction', async () => {
+    const created = await servicesRepo.insert({ name: 'Allergy Shots', isOpen: false });
+
+    expect(created.isOpen).toBe(false);
+    expect(call(sql.run, 1)).toEqual({
+      text: "UPDATE queues SET status = 'closed' WHERE serviceId = ?",
+      params: ['s-new'],
+    });
   });
 
   it('sends service fields and isOpen to their own tables', async () => {

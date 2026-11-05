@@ -13,6 +13,8 @@
    7. How the backend uses the database
    8. Tests and coverage
    9. Running it
+  10. Triggers: what the database does when a row changes
+  11. Sample data: empty database, populate, live, dump
 
 
 -------------------------------------------------------------------------------
@@ -177,10 +179,13 @@
                                                         name, active check-in,
                                                         called patient
  Relationships      service checks (404)               FOREIGN KEY
+ Business rules     services (409: full, closed,       triggers (section 10)
+                    capacity-below-waiting, ...)
 
  If the database rejects a value, the API still answers in its usual shape:
- a broken UNIQUE key becomes 409 "conflict", and a broken CHECK, length,
- type or NOT NULL rule becomes 400 "validation"
+ a trigger's refusal becomes 409 with the rule's own code (the same body the
+ service sends), a broken UNIQUE key becomes 409 "conflict", and a broken
+ CHECK, length, type or NOT NULL rule becomes 400 "validation"
  (server/src/api/middleware/errors.js).
 
 
@@ -195,14 +200,23 @@
    mysql.js         connection pool from DATABASE_URL (TLS with aiven-ca.pem),
                     query(), queryOne(), transaction()
    schema.sql       CREATE TABLE statements
-   setup.js         create/drop tables, load data (used by migrate.js)
-   migrate.js       npm run db:migrate | db:seed | db:reset
+   triggers.sql     the triggers in section 10
+   sqlFile.js       reads .sql files, including DELIMITER, like the mysql
+                    client does
+   signals.js       reads a trigger's "<code>|<text>" refusal
+   setup.js         create/drop tables and triggers, load data
+   migrate.js       npm run db:migrate | db:seed | db:reset | db:empty |
+                    db:load
    seed.js          demo data
+   mock/activity.js, populate.js, live.js, dumpSql.js, dump.js
+                    sample data and the dump (section 11)
    repositories/    every SQL query in the app: userRepo, servicesRepo,
                     queueRepo, historyRepo, notificationRepo
 
  Writes that touch two tables run in one transaction: a new user (credentials
- + profile), a new service (service + its queue), and loading demo data.
+ + profile), a new service (the service; trigger T1 adds its queue, and a
+ service created closed is closed in the same transaction), and loading demo
+ data.
 
  Queries use placeholders (?), so values are never pasted into the SQL text.
 
@@ -232,8 +246,16 @@
    tests/integration/notifications.test.js
    tests/mysql/repositories.test.js    against MySQL (npm run test:mysql)
 
- Result when this was written: 239 tests passed, 99.3% line coverage
- (npm run test:coverage), and 23 of 23 MySQL tests passed.
+ Added with the triggers and sample data (sections 10 and 11):
+   tests/unit/databaseSetup.test.js    also .sql reading and the triggers
+   tests/unit/dump.test.js             the dump
+   tests/unit/mockActivity.test.js     populate and live, on the in-memory
+                                       tables through the real services
+   tests/unit/errorHandler.test.js     a trigger refusal becomes a 409
+   tests/mysql/triggers.test.js        every trigger against MySQL
+
+ Result when this was written: 272 tests passed, 99.7% line coverage
+ (npm run test:coverage), and 40 of 40 MySQL tests passed (MySQL 8.4).
 
 
 -------------------------------------------------------------------------------
@@ -242,3 +264,101 @@
 
  See README.md section 3 for the database connection, demo accounts, and
  hosting the API.
+
+
+-------------------------------------------------------------------------------
+ 10. TRIGGERS: WHAT THE DATABASE DOES WHEN A ROW CHANGES
+-------------------------------------------------------------------------------
+
+ server/src/database/triggers.sql, run by `npm run db:migrate` after
+ schema.sql. The services check the same rules first and answer with a clear
+ message; the triggers make the rules hold for every writer (the API, the
+ scripts, Workbench, or two requests that race past the service's check).
+ They never write rows the API writes itself: the history module records
+ visit_history and the notification module records notifications.
+
+ A trigger that refuses a change raises SQLSTATE 45000 with the message
+ "<code>|<text>". The API answers 409 { error: <code>, message: <text> }, the
+ same body the service sends for that rule (server/src/database/signals.js,
+ server/src/api/middleware/errors.js).
+
+ Trigger                        When                  What it does
+ -----------------------------  --------------------  --------------------------
+ T1 trg_services_after_insert   a service is added    creates its queue, open
+                                                      (queue-<service id>)
+ T2 trg_services_before_update  a service changes     refuses an id change
+                                                      (id-locked) and a capacity
+                                                      below the number waiting
+                                                      (capacity-below-waiting)
+ T3 trg_services_before_delete  a service is deleted  refuses while anyone is
+                                                      waiting or called
+                                                      (patients-in-line)
+ T4 trg_queues_before_update    a queue changes       refuses moving it to
+                                                      another service
+                                                      (queue-locked)
+ T5 trg_entries_before_insert   someone joins a line  refuses a closed line
+                                                      (closed) and a full one:
+                                                      waiting + called at
+                                                      capacity, as joinQueue
+                                                      counts (full). Finished
+                                                      rows (demo data, a dump)
+                                                      are records and pass.
+ T6 trg_entries_before_update   an entry changes      a finished visit is final
+                                                      (visit-finished); only the
+                                                      called patient can be seen
+                                                      or a no-show (not-called);
+                                                      no leaving before joining
+                                                      (bad-time); no moving to
+                                                      another line or patient
+                                                      (entry-locked). Stamps
+                                                      calledAt / leftAt if a
+                                                      writer leaves them out.
+ T7 trg_history_before_update   history changes       refuses: history is a
+                                                      record (history-locked)
+
+ Hosted MySQL (e.g. Aiven): with binary logging on, a user without SUPER can
+ only create triggers when the server setting log_bin_trust_function_creators
+ is on. `npm run db:migrate` says so if that is the problem.
+
+
+-------------------------------------------------------------------------------
+ 11. SAMPLE DATA: EMPTY DATABASE, POPULATE, LIVE, DUMP
+-------------------------------------------------------------------------------
+
+   npm run db:empty     DELETES every table and all data, then creates them
+                        again, empty (db:reset does the same and reseeds)
+   npm run db:populate  adds sample data on top of what is there:
+                          - an empty database first gets the demo data
+                            (db:seed: demo accounts, 5 visit types, people
+                            waiting, a finished morning)
+                          - then, on every open line, 3-6 visits that already
+                            ended today (new front-desk patients, their
+                            finished entry, history row and read notices)
+                          - and 1-3 patients checking in now, through the
+                            app's own check-in (queueService.joinQueue)
+                        All times are relative to now, so "today" on the
+                        admin dashboard always has numbers. Run it again to
+                        add more. `-- --seed 42` repeats a run.
+   npm run db:live      keeps the office moving: every few seconds a patient
+                        checks in, is called, is seen or a no-show, or
+                        cancels, through queueService and staffQueueService,
+                        so history and notifications are written as for a
+                        real patient. Prints each event and the day's
+                        statistics. Ctrl+C stops.
+                        `-- --every 3 --ticks 50 --seed 7`
+   npm run db:dump      writes every table to server/src/database/dump.sql
+                        (or `-- file.sql`); no mysqldump needed
+   npm run db:load      REPLACES every table with that dump (or `-- file.sql`)
+   npm run db:up        optional: a private MySQL 8.4 on your laptop
+                        (server/docker-compose.yml), to try these without
+                        touching the shared database
+
+ A step that is refused (a closed or full line) is printed, not thrown,
+ because refusing it is the point.
+
+ The dump lists DROP TABLE, CREATE TABLE, the rows, and then the triggers, as
+ mysqldump does, so loading it does not run the triggers on the rows. It also
+ loads with `mysql -h HOST -P PORT -u USER -p DB < dump.sql` and in
+ Workbench. The committed dump.sql was made from an empty database with
+ db:empty, db:populate (seeds 42 and 43) and 30 db:live events, so its dates
+ are the day it was made; use db:populate for data dated today.

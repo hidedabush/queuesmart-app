@@ -57,10 +57,12 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  // Deleting a service removes its queue and entries; deleting credentials
-  // removes the profile, entries, notifications and history (CASCADE).
-  await query("DELETE FROM services WHERE name LIKE ?", [`${serviceName}%`]);
+  // Deleting credentials removes the profile, entries, notifications and
+  // history (CASCADE). That empties the lines first, because a trigger
+  // refuses to delete a service while anyone is still in its line; deleting
+  // the service then removes its queue.
   await query("DELETE FROM user_credentials WHERE id IN (?)", [[user.id, ...extraUsers]]);
+  await query("DELETE FROM services WHERE name LIKE ?", [`${serviceName}%`]);
   await close();
 });
 
@@ -141,10 +143,12 @@ describe("servicesRepo", () => {
     });
   });
 
-  it("removes a service with its queue and entries", async () => {
-    const extra = await newService({ isOpen: false });
+  it("removes a service with its queue and finished entries", async () => {
+    const extra = await newService();
     const extraEntry = await queueRepo.insert(queueEntry({ serviceId: extra.id, userId: (await newUser()).id }));
     extraUsers.push(extraEntry.userId);
+    // Only once its line is empty (trigger T3, as servicesService.deleteService).
+    await queueRepo.finish(extraEntry.id, "canceled");
 
     await servicesRepo.remove(extra.id);
 

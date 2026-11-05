@@ -22,6 +22,18 @@ describe('errorHandler', () => {
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ error: 'conflict' }));
   });
 
+  it('turns a trigger refusal into a 409 with the rule’s own code', () => {
+    const res = fakeResponse();
+    const message = 'capacity-below-waiting|6 patients are already in line. Capacity cannot be lower than that.';
+    const error = Object.assign(new Error(message), { code: 'ER_SIGNAL_EXCEPTION', sqlMessage: message });
+    errorHandler(error, {}, res, () => {});
+    expect(res.status).toHaveBeenCalledWith(409);
+    expect(res.json).toHaveBeenCalledWith({
+      error: 'capacity-below-waiting',
+      message: '6 patients are already in line. Capacity cannot be lower than that.',
+    });
+  });
+
   it('turns a MySQL rule violation into a 400', () => {
     const res = fakeResponse();
     const error = Object.assign(new Error('Check constraint'), { code: 'ER_CHECK_CONSTRAINT_VIOLATED' });

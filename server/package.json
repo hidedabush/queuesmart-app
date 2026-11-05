@@ -14,7 +14,14 @@
     "test:mysql": "node --env-file-if-exists=.env node_modules/vitest/vitest.mjs run --config vitest.mysql.config.js",
     "db:migrate": "node --env-file-if-exists=.env src/database/migrate.js",
     "db:seed": "node --env-file-if-exists=.env src/database/migrate.js --seed",
-    "db:reset": "node --env-file-if-exists=.env src/database/migrate.js --reset --seed"
+    "db:reset": "node --env-file-if-exists=.env src/database/migrate.js --reset --seed",
+    "db:empty": "node --env-file-if-exists=.env src/database/migrate.js --reset",
+    "db:populate": "node --env-file-if-exists=.env src/database/populate.js",
+    "db:live": "node --env-file-if-exists=.env src/database/live.js",
+    "db:dump": "node --env-file-if-exists=.env src/database/dump.js",
+    "db:load": "node --env-file-if-exists=.env src/database/migrate.js --load",
+    "db:up": "docker compose up -d --wait",
+    "db:down": "docker compose down"
   },
   "engines": {
     "node": "^22.13.0 || ^24.3.0 || >=26.0.0"

@@ -1,0 +1,24 @@
+# Optional: a private MySQL on your own laptop, for trying db:empty,
+# db:populate, db:live and db:load without touching the team's shared
+# database. `npm run db:up` starts it, `npm run db:down` stops
+# it (the data stays in the volume; `docker compose down -v` deletes it).
+#
+# server/.env:
+#   DATABASE_URL=mysql://root:queuesmart@localhost:3306/queuesmart
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: queuesmart
+      MYSQL_DATABASE: queuesmart
+    ports:
+      - "3306:3306"
+    volumes:
+      - queuesmart-mysql:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-pqueuesmart"]
+      interval: 3s
+      retries: 30
+
+volumes:
+  queuesmart-mysql:
