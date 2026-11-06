@@ -1,12 +1,12 @@
-import jwt from 'jsonwebtoken';
 import express from 'express';
-import { beforeEach, describe, expect, it } from 'vitest';
+import jwt from 'jsonwebtoken';
 import request from 'supertest';
+import { beforeEach, describe, expect, it } from 'vitest';
 
-import * as db from '../fakes/db.js';
 import { errorHandler, notFoundHandler } from '../../src/api/middleware/errors.js';
 import { patientQueueRoutes } from '../../src/api/routes/patientQueueRoutes.js';
 import { patientServiceQueueRoutes } from '../../src/api/routes/patientServiceQueueRoutes.js';
+import * as db from '../fakes/db.js';
 
 // Test-only authentication stand-in. This verifies the controller's
 // req.user.id dependency; it does not replace real application auth.
@@ -119,6 +119,37 @@ describe('patient queue API', () => {
 
     expect(cancelled.status).toBe(204);
     expect(cancelled.text).toBe('');
+
+    const retainedQueueEntry = db.all('queueEntries').find(
+      (entry) => entry.id === active.body.entry.id
+    );
+
+    expect(retainedQueueEntry).toMatchObject({
+      userId: 'u-patient-test',
+      serviceId: 's1',
+      reason: 'New cough',
+      status: 'canceled',
+    });
+
+    expect(retainedQueueEntry.leftAt).toEqual(expect.any(Number));
+
+    const cancellationHistory = db.all('history').find(
+      (row) =>
+        row.userId === 'u-patient-test' &&
+        row.serviceId === 's1' &&
+        row.outcome === 'cancelled'
+    );
+
+    expect(cancellationHistory).toMatchObject({
+      userId: 'u-patient-test',
+      serviceId: 's1',
+      serviceName: 'Sick Visit',
+      joinedAt: active.body.entry.arrivedAt,
+      outcome: 'cancelled',
+    });
+
+    expect(cancellationHistory.leftAt).toEqual(expect.any(Number));
+    expect(cancellationHistory.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
 
     const empty = await request(app).get('/queue/me');
 
