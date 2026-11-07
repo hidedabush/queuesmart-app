@@ -1,10 +1,16 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { ApiError, setAuthToken } from '../../api/client';
 import * as authApi from '../../api/auth';
-import * as servicesApi from '../../api/services';
-import * as queueApi from '../../api/queue';
+import {
+  ApiError,
+  clearAuthToken,
+  persistAuthToken,
+  restoreAuthToken,
+  setAuthToken,
+} from '../../api/client';
 import * as historyApi from '../../api/history';
 import * as notificationsApi from '../../api/notifications';
+import * as queueApi from '../../api/queue';
+import * as servicesApi from '../../api/services';
 
 /**
  * Shared front-end state, so every screen renders from the same copy.
@@ -32,11 +38,17 @@ export function ServicesProvider({ children }) {
   const [services, setServices] = useState([]);
   const [stats, setStats] = useState(null);
   const [connectionError, setConnectionError] = useState(null);
+  const [servicesLoaded, setServicesLoaded] = useState(false);
   const [patient, setPatientState] = useState(emptyPatient);
   const [role, setRole] = useState(null);
+  const [authReady, setAuthReady] = useState(false);
+  const [authRestoreError, setAuthRestoreError] = useState(null);
   const [history, setHistory] = useState([]);
+  const [historyLoaded, setHistoryLoaded] = useState(false);
+  const [historyError, setHistoryError] = useState(null);
   const [notifications, setNotifications] = useState([]);
   const [notificationsLoaded, setNotificationsLoaded] = useState(false);
+  const [notificationsError, setNotificationsError] = useState(null);
   const [activeQueue, setActiveQueue] = useState(null);
   const [queueLoading, setQueueLoading] = useState(true);
   const [queueError, setQueueError] = useState(null);
@@ -47,15 +59,22 @@ export function ServicesProvider({ children }) {
   // Forget the signed-in account and everything loaded for it.
   const signOut = useCallback(() => {
     setAuthToken(null);
+    void clearAuthToken().catch(() => {});
     setRole(null);
+    setAuthReady(true);
+    setAuthRestoreError(null);
     setPatientState(emptyPatient);
     setActiveQueue(null);
     setQueueLoading(true);
     setQueueError(null);
     setStats(null);
+    setServicesLoaded(false);
     setHistory([]);
+    setHistoryLoaded(false);
+    setHistoryError(null);
     setNotifications([]);
     setNotificationsLoaded(false);
+    setNotificationsError(null);
     setLines({});
   }, []);
 
@@ -67,6 +86,33 @@ export function ServicesProvider({ children }) {
     [signOut]
   );
 
+  const restoreSession = useCallback(async () => {
+    setAuthReady(false);
+    setAuthRestoreError(null);
+    try {
+      const token = await restoreAuthToken();
+      if (!token) return;
+
+      const user = await authApi.getMe();
+      setPatientState({ name: user.name, dob: user.dob ?? '', email: user.email });
+      setRole(user.role);
+    } catch (error) {
+      if (error instanceof ApiError && error.code === 'unauthenticated') {
+        await clearAuthToken().catch(() => {});
+        setPatientState(emptyPatient);
+        setRole(null);
+      } else {
+        setAuthRestoreError(error.message ?? 'Could not restore your session.');
+      }
+    } finally {
+      setAuthReady(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    restoreSession();
+  }, [restoreSession]);
+
   const refresh = useCallback(async () => {
     try {
       const [nextServices, nextStats] = await Promise.all([
@@ -77,9 +123,11 @@ export function ServicesProvider({ children }) {
       setServices(nextServices);
       setStats(nextStats);
       setConnectionError(null);
+      setServicesLoaded(true);
     } catch (error) {
       lostSession(error);
       setConnectionError(error.message);
+      setServicesLoaded(true);
     }
   }, [lostSession, role]);
 
@@ -133,9 +181,13 @@ export function ServicesProvider({ children }) {
   const refreshHistory = useCallback(async () => {
     try {
       setHistory(await historyApi.listMine());
+      setHistoryError(null);
     } catch (error) {
       if (!(error instanceof ApiError)) throw error;
       lostSession(error);
+      setHistoryError(error.message);
+    } finally {
+      setHistoryLoaded(true);
     }
   }, [lostSession]);
 
@@ -143,9 +195,12 @@ export function ServicesProvider({ children }) {
     try {
       setNotifications(await notificationsApi.listMine());
       setNotificationsLoaded(true);
+      setNotificationsError(null);
     } catch (error) {
       if (!(error instanceof ApiError)) throw error;
       lostSession(error);
+      setNotificationsError(error.message);
+      setNotificationsLoaded(true);
     }
   }, [lostSession]);
 
@@ -202,19 +257,23 @@ export function ServicesProvider({ children }) {
           };
         }
 
-        setAuthToken(token);
+        await persistAuthToken(token);
         setPatientState({ name: user.name, dob: user.dob ?? '', email: user.email });
         setRole(user.role);
         return { user };
       } catch (error) {
-        if (!(error instanceof ApiError)) throw error;
-        return asFailure(error);
+        if (error instanceof ApiError) return asFailure(error);
+        return { error: 'session-storage', message: 'Could not securely save your session. Please try signing in again.' };
       }
     }
 
     return {
       connectionError,
+      servicesLoaded,
       refresh,
+      authReady,
+      authRestoreError,
+      restoreSession,
 
       // Service management (server)
       services,
@@ -275,11 +334,16 @@ export function ServicesProvider({ children }) {
 
       // Connected to GET /history/me.
       history,
+      historyLoaded,
+      historyError,
+      refreshHistory,
 
       // Connected to /notifications. Marking is shown at once and then saved;
       // the next read puts back anything the server did not accept.
       notifications,
       notificationsLoaded,
+      notificationsError,
+      refreshNotifications,
       markNotificationRead: async (id) => {
         setNotifications((current) =>
           current.map((item) => (item.id === id ? { ...item, read: true } : item))
@@ -334,11 +398,17 @@ export function ServicesProvider({ children }) {
   }, [
     activeQueue,
     connectionError,
+    servicesLoaded,
+    authReady,
+    authRestoreError,
     history,
+    historyLoaded,
+    historyError,
     lines,
     lostSession,
     notifications,
     notificationsLoaded,
+    notificationsError,
     patient,
     queueError,
     queueLoading,

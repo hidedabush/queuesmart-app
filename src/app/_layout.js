@@ -2,11 +2,13 @@ import { DarkTheme, Stack, ThemeProvider, useRouter } from 'expo-router';
 import { getFocusedRouteNameFromRoute } from 'expo-router/react-navigation';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useRef } from 'react';
+import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import Button from '../frontend/components/Button';
+import NotificationWatcher from '../frontend/components/NotificationWatcher';
 import { ToastProvider } from '../frontend/components/Toast';
 import { ServicesProvider, useServices } from '../frontend/state/ServicesStore';
-import { colors, headerOptions } from '../frontend/theme';
-import NotificationWatcher from '../frontend/components/NotificationWatcher';
+import { colors, headerOptions, spacing, type } from '../frontend/theme';
 
 // Navigation chrome (headers, tab bar, borders) picks these up by default.
 const navigationTheme = {
@@ -26,7 +28,7 @@ const navigationTheme = {
 // rules; this keeps a signed-out visitor from landing on an empty screen.
 function AppStack() {
   const router = useRouter();
-  const { role } = useServices();
+  const { role, authReady, authRestoreError, restoreSession, logout } = useServices();
   const previousRole = useRef(role);
 
   // Signing out (or an expired session) sends the person back to sign-in.
@@ -34,6 +36,33 @@ function AppStack() {
     if (previousRole.current && !role) router.replace('/login');
     previousRole.current = role;
   }, [role, router]);
+
+  if (!authReady) {
+    return (
+      <View style={styles.sessionGate}>
+        <ActivityIndicator color={colors.accentText} />
+        <Text style={styles.sessionMessage}>Restoring your session…</Text>
+      </View>
+    );
+  }
+
+  if (authRestoreError) {
+    return (
+      <View style={styles.sessionGate}>
+        <Text style={type.title}>Can’t restore your session</Text>
+        <Text style={styles.sessionMessage}>{authRestoreError}</Text>
+        <Button label="Try again" onPress={restoreSession} />
+        <Button
+          label="Sign in instead"
+          variant="secondary"
+          onPress={() => {
+            logout();
+            router.replace('/login');
+          }}
+        />
+      </View>
+    );
+  }
 
   return (
     <Stack
@@ -75,6 +104,20 @@ function AppStack() {
     </Stack>
   );
 }
+
+const styles = StyleSheet.create({
+  sessionGate: {
+    flex: 1,
+    justifyContent: 'center',
+    gap: spacing.lg,
+    padding: spacing.xl,
+    backgroundColor: colors.bg,
+  },
+  sessionMessage: {
+    ...type.secondary,
+    textAlign: 'center',
+  },
+});
 
 export default function RootLayout() {
   return (

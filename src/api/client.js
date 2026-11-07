@@ -1,4 +1,5 @@
 import Constants from 'expo-constants';
+import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
 
 /**
@@ -11,10 +12,11 @@ import { Platform } from 'react-native';
  *   2. web: the same host the page was loaded from, port 4000
  *   3. phone: the laptop running Expo (from the QR code's address), port 4000
  *
- * TODO(auth): the auth teammate adds the login token here and sends it as
- * "Authorization: Bearer <token>" with every request.
+ * The auth token is sent as "Authorization: Bearer <token>" with every
+ * authenticated request.
  */
 const API_PORT = 4000;
+const TOKEN_KEY = 'queuesmart.authToken';
 
 function baseUrl() {
   const fromEnv = process.env.EXPO_PUBLIC_API_URL;
@@ -44,9 +46,38 @@ export class ApiError extends Error {
 
 let authToken = null;
 
-// Called by the store after sign-in and sign-out.
+function webSessionStorage() {
+  return typeof sessionStorage === 'undefined' ? null : sessionStorage;
+}
+
 export function setAuthToken(token) {
   authToken = token;
+}
+
+export async function persistAuthToken(token) {
+  if (Platform.OS === 'web') {
+    webSessionStorage()?.setItem(TOKEN_KEY, token);
+  } else {
+    await SecureStore.setItemAsync(TOKEN_KEY, token);
+  }
+  authToken = token;
+}
+
+export async function restoreAuthToken() {
+  const token = Platform.OS === 'web'
+    ? webSessionStorage()?.getItem(TOKEN_KEY) ?? null
+    : await SecureStore.getItemAsync(TOKEN_KEY);
+  authToken = token;
+  return token;
+}
+
+export async function clearAuthToken() {
+  authToken = null;
+  if (Platform.OS === 'web') {
+    webSessionStorage()?.removeItem(TOKEN_KEY);
+  } else {
+    await SecureStore.deleteItemAsync(TOKEN_KEY);
+  }
 }
 
 export async function request(method, path, body) {
