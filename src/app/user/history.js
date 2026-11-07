@@ -24,7 +24,7 @@ function formatDate(isoDate) {
 export default function QueueHistory() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { history } = useServices();
+  const { history, historyLoaded, historyError, refreshHistory } = useServices();
 
   return (
     <View style={styles.screen}>
@@ -36,7 +36,22 @@ export default function QueueHistory() {
         <Text style={type.title}>Queue history</Text>
         <Text style={styles.subtitle}>Past services you have joined.</Text>
 
-        {history.length ? (
+        {!historyLoaded ? (
+          <View style={styles.emptyState}>
+            <Text style={styles.emptyTitle}>Loading history…</Text>
+          </View>
+        ) : historyError ? (
+          <View style={styles.emptyState}>
+            <Text style={styles.emptyTitle}>Couldn’t load history</Text>
+            <Text style={styles.subtitle}>{historyError}</Text>
+            <Button
+              label="Try again"
+              variant="secondary"
+              onPress={refreshHistory}
+              style={styles.dashboardButton}
+            />
+          </View>
+        ) : history.length ? (
           <View style={styles.list}>
             {history.map((entry) => (
               <View key={entry.id} style={styles.row}>

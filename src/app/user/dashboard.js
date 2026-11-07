@@ -1,21 +1,21 @@
 import { Stack, useRouter } from 'expo-router';
 import { useMemo, useRef, useState } from 'react';
 import {
-    Animated,
-    Modal,
-    PanResponder,
-    Pressable,
-    ScrollView,
-    StyleSheet,
-    Text,
-    View,
+  Animated,
+  Modal,
+  PanResponder,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
 } from 'react-native';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { formatWait } from '../../frontend/rules';
 import { checkInStatus, formatEstimate } from '../../frontend/checkInStatus';
 import Button from '../../frontend/components/Button';
 import { OpenPill } from '../../frontend/components/Pill';
+import { formatWait } from '../../frontend/rules';
 import { useQueue, useServices } from '../../frontend/state/ServicesStore';
 import { colors, radius, spacing, type } from '../../frontend/theme';
 
@@ -117,9 +117,19 @@ function NotificationItem({ item, onDismiss }) {
 export default function UserDashboard() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { services, notifications: sent, markNotificationRead, markAllNotificationsRead } =
-    useServices();
-  const { activeQueue } = useQueue();
+  const {
+    services,
+    notifications: sent,
+    notificationsLoaded,
+    notificationsError,
+    refreshNotifications,
+    servicesLoaded,
+    connectionError,
+    refresh,
+    markNotificationRead,
+    markAllNotificationsRead,
+  } = useServices();
+  const { activeQueue, queueLoading, queueError, refreshMyQueue } = useQueue();
   const [notificationsVisible, setNotificationsVisible] = useState(false);
   const [dismissedNotifications, setDismissedNotifications] = useState([]);
   const sheetTranslateY = useMemo(() => new Animated.Value(0), []);
@@ -261,7 +271,23 @@ export default function UserDashboard() {
           </View>
         </View>
 
-        {activeQueue && service ? (
+        {queueLoading && !activeQueue ? (
+          <View style={styles.emptyQueuePanel}>
+            <Text style={styles.emptyQueueDescription}>Loading your queue…</Text>
+          </View>
+        ) : queueError && !activeQueue ? (
+          <View style={styles.emptyQueuePanel}>
+            <Text style={styles.emptyQueueTitle}>Can’t load your queue</Text>
+            <Text style={styles.emptyQueueDescription}>{queueError}</Text>
+            <Button label="Try again" variant="secondary" onPress={refreshMyQueue} style={styles.queueButton} />
+          </View>
+        ) : activeQueue && !service && connectionError ? (
+          <View style={styles.emptyQueuePanel}>
+            <Text style={styles.emptyQueueTitle}>Queue details unavailable</Text>
+            <Text style={styles.emptyQueueDescription}>{connectionError}</Text>
+            <Button label="Try again" variant="secondary" onPress={refresh} style={styles.queueButton} />
+          </View>
+        ) : activeQueue && service ? (
           <View style={styles.queuePanel}>
             <View style={styles.queuePanelTop}>
               <View style={styles.queueServiceName}>
@@ -318,7 +344,21 @@ export default function UserDashboard() {
             <Text style={styles.scrollHint}>SWIPE  &gt;</Text>
           </View>
 
-          {openServices.length > 0 ? (
+          {!servicesLoaded ? (
+            <View style={styles.noServices}>
+              <Text style={styles.noServicesText}>Loading available services…</Text>
+            </View>
+          ) : connectionError ? (
+            <View style={styles.noServices}>
+              <Text style={styles.noServicesText}>Couldn’t load available services. {connectionError}</Text>
+              <Button
+                label="Try again"
+                variant="secondary"
+                onPress={refresh}
+                style={styles.browseButton}
+              />
+            </View>
+          ) : openServices.length > 0 ? (
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
@@ -423,7 +463,19 @@ export default function UserDashboard() {
                 </Pressable>
               </View>
             </View>
-            {notifications.length ? notifications.map((item) => (
+            {!notificationsLoaded ? (
+              <Text style={styles.notificationEmpty}>Loading recent updates…</Text>
+            ) : notificationsError ? (
+              <View>
+                <Text style={styles.notificationEmpty}>Couldn’t load saved updates.</Text>
+                <Button
+                  label="Try again"
+                  variant="secondary"
+                  onPress={refreshNotifications}
+                  style={styles.browseButton}
+                />
+              </View>
+            ) : notifications.length ? notifications.map((item) => (
               <NotificationItem key={item.id} item={item} onDismiss={dismissNotification} />
             )) : (
               <Text style={styles.notificationEmpty}>You are all caught up.</Text>
