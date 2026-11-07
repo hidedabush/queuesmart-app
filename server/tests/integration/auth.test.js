@@ -1,5 +1,5 @@
-import { beforeEach, describe, expect, it } from 'vitest';
 import request from 'supertest';
+import { beforeEach, describe, expect, it } from 'vitest';
 
 import { createApp } from '../../src/app.js';
 import { reset } from '../fakes/db.js';
@@ -19,6 +19,7 @@ describe('Authentication API', () => {
         name: 'Taylor Morgan',
         dob: '03/14/1995',
         email: 'taylor@example.com',
+        phone: '(713) 555-0199',
         password: 'Queue#2026',
       });
 
@@ -26,6 +27,7 @@ describe('Authentication API', () => {
     expect(response.body.user).toMatchObject({
       name: 'Taylor Morgan',
       email: 'taylor@example.com',
+      phone: '7135550199',
       role: 'user',
     });
     expect(response.body.user.passwordHash).toBeUndefined();

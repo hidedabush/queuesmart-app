@@ -36,11 +36,13 @@ export default function RegisterScreen() {
   const nameRef = useRef(null);
   const dobRef = useRef(null);
   const emailRef = useRef(null);
+  const phoneRef = useRef(null);
   const passwordRef = useRef(null);
   const confirmPasswordRef = useRef(null);
   const [name, setName] = useState('');
   const [dob, setDob] = useState('');
   const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [errors, setErrors] = useState({});
@@ -80,6 +82,10 @@ export default function RegisterScreen() {
       nextErrors.email = 'Enter a valid email address.';
     }
 
+    if (phone.trim() && !/^\d{10}$/.test(phone.replace(/[\s\-()]/g, ''))) {
+      nextErrors.phone = 'Enter a 10-digit phone number.';
+    }
+
     if (!password) {
       nextErrors.password = 'Password is required.';
     } else if (passwordChecks.some((rule) => !rule.met)) {
@@ -104,6 +110,7 @@ export default function RegisterScreen() {
       name: name.trim().replace(/\s+/g, ' '),
       dob: dob.trim(),
       email: email.trim(),
+      ...(phone.trim() && { phone: phone.replace(/[\s\-()]/g, '') }),
       password,
     });
     setSubmitting(false);
@@ -205,7 +212,7 @@ export default function RegisterScreen() {
                 setErrors((current) => ({ ...current, email: undefined }));
               }
             }}
-            onSubmitEditing={handleEmailSubmit}
+            onSubmitEditing={() => phoneRef.current?.focus()}
             error={errors.email}
             placeholder="name@school.edu"
             keyboardType="email-address"
@@ -217,6 +224,26 @@ export default function RegisterScreen() {
             returnKeyType="next"
             inputRef={emailRef}
             required
+          />
+
+          <Field
+            label="Phone number"
+            value={phone}
+            onChangeText={(value) => {
+              setPhone(value);
+              if (errors.phone) {
+                setErrors((current) => ({ ...current, phone: undefined }));
+              }
+            }}
+            onSubmitEditing={handleEmailSubmit}
+            error={errors.phone}
+            placeholder="10-digit phone number"
+            keyboardType="phone-pad"
+            textContentType="telephoneNumber"
+            maxLength={14}
+            helper="Optional. Used for queue text notifications when available."
+            returnKeyType="next"
+            inputRef={phoneRef}
           />
 
           <Field
